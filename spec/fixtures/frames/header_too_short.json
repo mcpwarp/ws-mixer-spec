@@ -1,0 +1,10 @@
+{
+  "description": "WS message of 7 bytes, one short of the fixed 8-byte frame header (see header_too_short_zero_bytes.json for the empty-message variant)",
+  "hex": "00000000000000",
+  "valid": false,
+  "decoded": null,
+  "expect": {
+    "error_code": "PROTOCOL_ERROR",
+    "connection_fatal": true
+  }
+}

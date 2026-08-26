@@ -1,0 +1,12 @@
+{
+  "description": "connection-fatal flow control error naming the offending stream, with a number that came off the wire in the message",
+  "message": {
+    "t": "error",
+    "code": 3,
+    "message": "stream 41: received 20480 DATA bytes with 8192 credit remaining",
+    "stream_id": 41,
+    "last_stream_id": 1287
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

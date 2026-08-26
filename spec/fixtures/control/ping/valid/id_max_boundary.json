@@ -1,0 +1,6 @@
+{
+  "description": "ping.id at its upper boundary, 2^53-1 (the largest integer a JSON number can carry losslessly)",
+  "message": { "t": "ping", "id": 9007199254740991, "ts": 1756137600123 },
+  "schema_valid": true,
+  "wire_valid": true
+}

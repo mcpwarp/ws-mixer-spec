@@ -1,0 +1,12 @@
+{
+  "description": "CLOSE frame with flags byte 0x01 set. OVERVIEW.md section 2.2: 'No flags in v1. Senders MUST write 0. Receivers MUST ignore unknown bits' -- valid, not rejected",
+  "hex": "0301000000000001",
+  "valid": true,
+  "decoded": {
+    "type": "CLOSE",
+    "flags": 1,
+    "stream_id": 1,
+    "payload_hex": ""
+  },
+  "expect": null
+}

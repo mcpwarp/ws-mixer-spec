@@ -1,0 +1,7 @@
+{
+  "description": "error.code must be an integer, not a string",
+  "message": { "t": "error", "code": "0x03", "message": "flow control error" },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "code" }
+}

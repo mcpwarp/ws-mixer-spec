@@ -1,0 +1,7 @@
+{
+  "description": "The stream-0 DATA payload bytes do not even parse as JSON. Unlike every other control fixture, this one carries a `raw` string (the literal, deliberately-broken bytes) instead of a `message` object -- see spec/README.md's 'Control message fixtures' section for why. OVERVIEW.md section 2.7 envelope table: malformed JSON -> conn PROTOCOL_ERROR",
+  "raw": "{\"t\":\"hello\", \"v\":1, }",
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "JSON" }
+}

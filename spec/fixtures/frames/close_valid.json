@@ -1,0 +1,12 @@
+{
+  "description": "CLOSE frame (half-close) for stream 1, empty payload",
+  "hex": "0300000000000001",
+  "valid": true,
+  "decoded": {
+    "type": "CLOSE",
+    "flags": 0,
+    "stream_id": 1,
+    "payload_hex": ""
+  },
+  "expect": null
+}

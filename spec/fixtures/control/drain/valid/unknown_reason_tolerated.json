@@ -1,0 +1,6 @@
+{
+  "description": "reason value outside the documented enum (rollout|overload|id_exhausted|replaced|maintenance|client_requested). OVERVIEW.md section 2.7: 'An unknown reason is not fatal -- treat as maintenance and count.' The schema deliberately does not close this enum, so this is schema-valid.",
+  "message": { "t": "drain", "reason": "v2_capacity_shed", "last_stream_id": 512 },
+  "schema_valid": true,
+  "wire_valid": true
+}

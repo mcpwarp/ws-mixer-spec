@@ -1,0 +1,10 @@
+{
+  "description": "Empty (0-byte) WS message, the degenerate case of a message shorter than the fixed 8-byte frame header",
+  "hex": "",
+  "valid": false,
+  "decoded": null,
+  "expect": {
+    "error_code": "PROTOCOL_ERROR",
+    "connection_fatal": true
+  }
+}

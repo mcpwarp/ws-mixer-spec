@@ -1,0 +1,10 @@
+{
+  "description": "WINDOW frame with increment 0; illegal per OVERVIEW.md section 2.3 (legal range is 1 .. 2^31-1) but stream-scoped, not connection-fatal",
+  "hex": "020000000000000100000000",
+  "valid": false,
+  "decoded": null,
+  "expect": {
+    "error_code": "PROTOCOL_ERROR",
+    "connection_fatal": false
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "description": "Stream-0 DATA payload is a JSON array, not an object. OVERVIEW.md section 2.7: 'Never an array, never a bare scalar' -- envelope-level violation, conn PROTOCOL_ERROR",
+  "message": [1, 2, 3],
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "object" }
+}

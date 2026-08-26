@@ -1,0 +1,72 @@
+{
+  "description": "Sender exhausts the receiver's credit window exactly, then must stop (MUST NOT send more DATA at window 0), then resumes once a WINDOW update arrives. window is the minimum legal value, 16384, so the numbers stay realistic. Frames use payload_length instead of payload_hex here since the exact bytes are irrelevant to the flow-control behaviour being tested.",
+  "role": "server",
+  "steps": [
+    {
+      "recv": {
+        "t": "hello",
+        "v": 1,
+        "token": "t",
+        "agent": {
+          "sdk": "ws-mixer-js",
+          "sdk_version": "1.0.0"
+        },
+        "window": 16384
+      }
+    },
+    {
+      "send": {
+        "t": "welcome",
+        "v": 1,
+        "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W",
+        "window": 16384,
+        "max_streams": 64,
+        "ping_interval": 30000,
+        "ping_timeout": 90000
+      }
+    },
+    {
+      "send": {
+        "type": "OPEN",
+        "stream_id": 1
+      }
+    },
+    {
+      "send": {
+        "type": "DATA",
+        "stream_id": 1,
+        "payload_length": 16384
+      }
+    },
+    {
+      "expect": {
+        "stream_state": "open",
+        "send_window": 0
+      }
+    },
+    {
+      "recv": {
+        "type": "WINDOW",
+        "stream_id": 1,
+        "increment": 8192
+      }
+    },
+    {
+      "expect": {
+        "send_window": 8192
+      }
+    },
+    {
+      "send": {
+        "type": "DATA",
+        "stream_id": 1,
+        "payload_length": 8192
+      }
+    },
+    {
+      "expect": {
+        "send_window": 0
+      }
+    }
+  ]
+}

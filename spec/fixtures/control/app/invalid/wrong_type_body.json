@@ -1,0 +1,7 @@
+{
+  "description": "app.body must be a JSON object, not an array",
+  "message": { "t": "app", "body": ["not", "an", "object"] },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "body" }
+}

@@ -1,0 +1,7 @@
+{
+  "description": "app missing the required body field",
+  "message": { "t": "app" },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "body" }
+}

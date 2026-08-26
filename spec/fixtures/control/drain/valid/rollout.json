@@ -1,0 +1,12 @@
+{
+  "description": "typical rollout drain with a deadline and human message",
+  "message": {
+    "t": "drain",
+    "reason": "rollout",
+    "last_stream_id": 1287,
+    "deadline_ms": 25000,
+    "message": "edge-7c9f-bkl2p is shutting down; reconnect now"
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

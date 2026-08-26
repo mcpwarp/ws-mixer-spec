@@ -1,0 +1,7 @@
+{
+  "description": "app with an unrecognized top-level field alongside body -- rejected by the strict test-time schema even though such a field would be tolerated on the wire at runtime",
+  "message": { "t": "app", "body": { "op": "ping" }, "seq": 1 },
+  "schema_valid": false,
+  "wire_valid": true,
+  "expect": { "error_code": "SCHEMA_ADDITIONAL_PROPERTIES", "message_contains": "seq" }
+}

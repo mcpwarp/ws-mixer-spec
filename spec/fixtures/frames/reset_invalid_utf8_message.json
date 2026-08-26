@@ -1,0 +1,14 @@
+{
+  "description": "RESET message bytes contain invalid UTF-8 (0xff 0xfe). OVERVIEW.md section 2.3: invalid UTF-8 in the message must be sanitized (replacement characters), not treated as a connection error",
+  "hex": "04000000000000010000000163616e63656cfffe20726561736f6e",
+  "valid": true,
+  "decoded": {
+    "type": "RESET",
+    "flags": 0,
+    "stream_id": 1,
+    "code": 1,
+    "message": "cancel\ufffd\ufffd reason",
+    "message_sanitized": true
+  },
+  "expect": null
+}

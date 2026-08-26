@@ -1,0 +1,7 @@
+{
+  "description": "error missing the required message field",
+  "message": { "t": "error", "code": 1 },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "message" }
+}

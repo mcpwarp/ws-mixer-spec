@@ -1,0 +1,10 @@
+{
+  "description": "WINDOW payload is 3 bytes instead of the required 4; connection FRAME_SIZE_ERROR",
+  "hex": "0200000000000001000001",
+  "valid": false,
+  "decoded": null,
+  "expect": {
+    "error_code": "FRAME_SIZE_ERROR",
+    "connection_fatal": true
+  }
+}

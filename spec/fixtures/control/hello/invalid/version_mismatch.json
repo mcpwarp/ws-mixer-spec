@@ -1,0 +1,12 @@
+{
+  "description": "hello.v does not match the ws-mixer.v1 subprotocol (v:2 instead of 1). OVERVIEW.md section 2.7 hello field table: 'must be 1 and match the subprotocol. Mismatch -> UNSUPPORTED (4010)'",
+  "message": {
+    "t": "hello",
+    "v": 2,
+    "token": "eyJhbGciOiJIUzI1NiJ9.abc123",
+    "agent": { "sdk": "ws-mixer-py", "sdk_version": "0.2.0" }
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "UNSUPPORTED", "message_contains": "v" }
+}

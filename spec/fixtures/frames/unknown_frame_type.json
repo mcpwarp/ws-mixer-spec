@@ -1,0 +1,12 @@
+{
+  "description": "Frame type 0x05 is unassigned in v1; OVERVIEW.md section 2.2 says unknown type is ignored and counted, not a connection error",
+  "hex": "05000000000000010102",
+  "valid": true,
+  "decoded": {
+    "type": "UNKNOWN(0x05)",
+    "flags": 0,
+    "stream_id": 1,
+    "payload_hex": "0102"
+  },
+  "expect": null
+}

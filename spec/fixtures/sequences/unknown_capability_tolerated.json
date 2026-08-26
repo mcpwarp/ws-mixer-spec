@@ -1,0 +1,9 @@
+{
+  "description": "hello advertises a capability string the server has never heard of. OVERVIEW.md section 2.7: capabilities negotiation is additive and forward-compatible -- the server simply never uses a message type gated behind a capability it did not itself advertise; an unrecognized capability token is not a validation failure and the handshake proceeds normally.",
+  "role": "server",
+  "steps": [
+    { "recv": { "t": "hello", "v": 1, "token": "t", "agent": { "sdk": "ws-mixer-js", "sdk_version": "9.9.9" }, "capabilities": ["future.capability.v9"] } },
+    { "send": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000, "capabilities": [] } },
+    { "expect": { "error_code": null } }
+  ]
+}

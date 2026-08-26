@@ -1,0 +1,12 @@
+{
+  "description": "unknown t value (typo of hello) must be rejected -- covers OVERVIEW.md section 2.7's envelope rule that an unknown `t` is always a connection PROTOCOL_ERROR, even for a message otherwise shaped like a known type",
+  "message": {
+    "t": "helo",
+    "v": 1,
+    "token": "eyJhbGciOiJIUzI1NiJ9.abc123",
+    "agent": { "sdk": "ws-mixer-py", "sdk_version": "0.2.0" }
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "unknown control message type" }
+}

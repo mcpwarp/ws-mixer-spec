@@ -1,0 +1,7 @@
+{
+  "description": "`t` is present but is a number, not a string. OVERVIEW.md section 2.7 envelope table: 't not a string' -> conn PROTOCOL_ERROR",
+  "message": { "t": 1, "v": 1 },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "t" }
+}

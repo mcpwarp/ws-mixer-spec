@@ -1,0 +1,6 @@
+{
+  "description": "ping.id at its lower boundary (0); ts is optional and omitted here",
+  "message": { "t": "ping", "id": 0 },
+  "schema_valid": true,
+  "wire_valid": true
+}

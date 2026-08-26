@@ -1,0 +1,14 @@
+{
+  "description": "RESET frame (code=1 PROTOCOL_ERROR) whose message contains an embedded NUL byte. OVERVIEW.md section 2.3: message 'SHOULD be <= 256B, no NUL' is a SHOULD, not a wire-format MUST -- the 8-byte-header + code + bytes frame decodes successfully at the wire level (NUL is valid UTF-8) regardless. The NUL-freedom check is SDK unit-test territory: a per-SDK RESET-sending helper SHOULD reject or strip an embedded NUL before it ever reaches the wire, but that policy lives above the frame decoder this checker implements, not in it.",
+  "hex": "040000000000000100000001626164006d7367",
+  "valid": true,
+  "decoded": {
+    "type": "RESET",
+    "flags": 0,
+    "stream_id": 1,
+    "code": 1,
+    "message": "bad\u0000msg"
+  },
+  "policy_violation": "message contains a NUL byte; SHOULD-level violation only, see description",
+  "expect": null
+}

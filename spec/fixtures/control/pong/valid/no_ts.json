@@ -1,0 +1,6 @@
+{
+  "description": "pong without ts -- ts is optional in the schema even though a well-behaved sender always echoes it when the ping carried one",
+  "message": { "t": "pong", "id": 7 },
+  "schema_valid": true,
+  "wire_valid": true
+}

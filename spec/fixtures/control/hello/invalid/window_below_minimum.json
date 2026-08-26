@@ -1,0 +1,13 @@
+{
+  "description": "hello.window below the 16384-byte floor",
+  "message": {
+    "t": "hello",
+    "v": 1,
+    "token": "eyJhbGciOiJIUzI1NiJ9.abc123",
+    "agent": { "sdk": "ws-mixer-py", "sdk_version": "0.2.0" },
+    "window": 100
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "window" }
+}

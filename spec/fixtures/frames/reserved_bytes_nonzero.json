@@ -1,0 +1,13 @@
+{
+  "description": "DATA frame with non-zero reserved bytes (0x1234). Senders MUST write 0 but receivers MUST ignore, not reject, per OVERVIEW.md section 2.2",
+  "hex": "0100123400000001616263",
+  "valid": true,
+  "decoded": {
+    "type": "DATA",
+    "flags": 0,
+    "stream_id": 1,
+    "payload_hex": "616263",
+    "reserved_ignored": "1234"
+  },
+  "expect": null
+}

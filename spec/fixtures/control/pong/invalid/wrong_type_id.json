@@ -1,0 +1,7 @@
+{
+  "description": "pong.id must be an integer, not a string",
+  "message": { "t": "pong", "id": "42", "ts": 1756137600123 },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "id" }
+}

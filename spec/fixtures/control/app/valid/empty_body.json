@@ -1,0 +1,6 @@
+{
+  "description": "app.body as an empty object -- body is opaque to ws-mixer, so an empty object is structurally valid even if a given application would reject it at its own layer",
+  "message": { "t": "app", "body": {} },
+  "schema_valid": true,
+  "wire_valid": true
+}

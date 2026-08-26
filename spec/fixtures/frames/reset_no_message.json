@@ -1,0 +1,13 @@
+{
+  "description": "RESET frame with exactly the minimum 4-byte payload (error_code=0 NO_ERROR), no message. Valid per OVERVIEW.md section 2.3: message is optional",
+  "hex": "040000000000000100000000",
+  "valid": true,
+  "decoded": {
+    "type": "RESET",
+    "flags": 0,
+    "stream_id": 1,
+    "code": 0,
+    "message": ""
+  },
+  "expect": null
+}

@@ -1,0 +1,12 @@
+{
+  "description": "WINDOW frame crediting stream 1 with a 131072-byte increment",
+  "hex": "020000000000000100020000",
+  "valid": true,
+  "decoded": {
+    "type": "WINDOW",
+    "flags": 0,
+    "stream_id": 1,
+    "increment": 131072
+  },
+  "expect": null
+}

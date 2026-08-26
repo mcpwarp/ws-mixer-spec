@@ -1,0 +1,6 @@
+{
+  "description": "deadline_ms at its boundary of 0, meaning immediately (absent also means immediately, per OVERVIEW.md section 2.7)",
+  "message": { "t": "drain", "reason": "maintenance", "last_stream_id": 0, "deadline_ms": 0 },
+  "schema_valid": true,
+  "wire_valid": true
+}

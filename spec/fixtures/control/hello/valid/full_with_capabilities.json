@@ -1,0 +1,20 @@
+{
+  "description": "hello with all optional fields, window/max_streams at their max boundary, and unusual-but-well-formed capability strings",
+  "message": {
+    "t": "hello",
+    "v": 1,
+    "token": "eyJhbGciOiJIUzI1NiJ9.abc123",
+    "agent": {
+      "sdk": "ws-mixer-js",
+      "sdk_version": "0.3.1",
+      "runtime": "node/22.4.0",
+      "os": "darwin/arm64"
+    },
+    "window": 2147483647,
+    "max_streams": 100000,
+    "capabilities": ["app.v2", "drain.reconnect-hint", "x-vendor.experimental_flag.2"],
+    "meta": { "mcpwarp": { "v": 1, "services": [{ "id": "anki", "name": "Anki MCP" }] } }
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

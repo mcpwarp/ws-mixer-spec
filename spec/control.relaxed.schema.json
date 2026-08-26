@@ -1,0 +1,339 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcpwarp.io/ws-mixer/v1/control.relaxed.schema.json",
+  "title": "ws-mixer.v1 control channel messages (relaxed, wire-accurate)",
+  "description": "GENERATED from control.schema.json by tools/gen-relaxed-schema.mjs -- do not hand-edit. Every additionalProperties:false from the strict schema is removed, so this schema accepts any unknown field on a known `t`, matching OVERVIEW.md section 2.7's wire-level forward-compatibility rule. This is the schema that models real wire_valid, as opposed to the deliberately-stricter control.schema.json, which is a test-time typo-catcher.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/hello"
+    },
+    {
+      "$ref": "#/$defs/welcome"
+    },
+    {
+      "$ref": "#/$defs/ping"
+    },
+    {
+      "$ref": "#/$defs/pong"
+    },
+    {
+      "$ref": "#/$defs/drain"
+    },
+    {
+      "$ref": "#/$defs/error"
+    },
+    {
+      "$ref": "#/$defs/app"
+    }
+  ],
+  "$defs": {
+    "hello": {
+      "$anchor": "hello",
+      "title": "hello",
+      "description": "Client -> server, the first frame on stream 0, always. OVERVIEW.md §2.7.",
+      "type": "object",
+      "required": [
+        "t",
+        "v",
+        "token",
+        "agent"
+      ],
+      "properties": {
+        "t": {
+          "const": "hello"
+        },
+        "v": {
+          "type": "integer",
+          "const": 1,
+          "description": "must be 1 and match the ws-mixer.v1 subprotocol"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "must equal the Authorization bearer token"
+        },
+        "agent": {
+          "type": "object",
+          "required": [
+            "sdk",
+            "sdk_version"
+          ],
+          "properties": {
+            "sdk": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "sdk_version": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "runtime": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "os": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        },
+        "window": {
+          "type": "integer",
+          "minimum": 16384,
+          "maximum": 2147483647,
+          "description": "this peer's receive window; default 262144"
+        },
+        "max_streams": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "streams this peer will accept; default 64"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]{1,64}$"
+          }
+        },
+        "meta": {
+          "type": "object",
+          "description": "opaque to ws-mixer; delivered to the application before welcome is sent"
+        }
+      }
+    },
+    "welcome": {
+      "$anchor": "welcome",
+      "title": "welcome",
+      "description": "Server -> client, reply to hello. OVERVIEW.md §2.7.",
+      "type": "object",
+      "required": [
+        "t",
+        "v",
+        "session",
+        "window",
+        "max_streams",
+        "ping_interval",
+        "ping_timeout"
+      ],
+      "properties": {
+        "t": {
+          "const": "welcome"
+        },
+        "v": {
+          "type": "integer",
+          "const": 1,
+          "description": "version accepted"
+        },
+        "session": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 1,
+          "description": "connection id, ULID recommended"
+        },
+        "window": {
+          "type": "integer",
+          "minimum": 16384,
+          "maximum": 2147483647,
+          "description": "the server's own receive window"
+        },
+        "max_streams": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "the effective cap = min(client ask, server policy)"
+        },
+        "ping_interval": {
+          "type": "integer",
+          "minimum": 5000,
+          "description": "server MUST NOT set below 5000ms"
+        },
+        "ping_timeout": {
+          "type": "integer",
+          "minimum": 10000,
+          "description": "MUST be >= 2x ping_interval; the schema can only enforce the floor implied by ping_interval's own floor of 5000. The 2x-of-the-actual-ping_interval cross-field rule is a hand-written runtime check, not expressible here."
+        },
+        "server": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "node": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]{1,64}$"
+          }
+        },
+        "meta": {
+          "type": "object",
+          "description": "opaque; the application's answer to hello.meta"
+        }
+      }
+    },
+    "ping": {
+      "$anchor": "ping",
+      "title": "ping",
+      "description": "Sent by either side every ping_interval. OVERVIEW.md §2.7, §2.9.",
+      "type": "object",
+      "required": [
+        "t",
+        "id"
+      ],
+      "properties": {
+        "t": {
+          "const": "ping"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "monotonic per sender; 0 .. 2^53-1"
+        },
+        "ts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "sender's clock, ms since epoch"
+        }
+      }
+    },
+    "pong": {
+      "$anchor": "pong",
+      "title": "pong",
+      "description": "Sent immediately on ping, echoing id and ts verbatim. OVERVIEW.md §2.7, §2.9.",
+      "type": "object",
+      "required": [
+        "t",
+        "id"
+      ],
+      "properties": {
+        "t": {
+          "const": "pong"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "must equal the id of the ping being answered"
+        },
+        "ts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "must equal the ping's ts verbatim"
+        }
+      }
+    },
+    "drain": {
+      "$anchor": "drain",
+      "title": "drain",
+      "description": "Server -> client (and client -> server with reason=client_requested). OVERVIEW.md §2.7, §2.9. `reason` is a closed enum at the protocol level, but an unrecognized value is tolerated at runtime (degrade to maintenance, count) rather than rejected, so this schema intentionally does not use `enum` here -- it accepts any short token string.",
+      "type": "object",
+      "required": [
+        "t",
+        "reason",
+        "last_stream_id"
+      ],
+      "properties": {
+        "t": {
+          "const": "drain"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "known values: rollout | overload | id_exhausted | replaced | maintenance | client_requested. Unknown values are tolerated at runtime (treated as maintenance) and are NOT a schema violation."
+        },
+        "last_stream_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "description": "highest id the server has opened or will open; endpoints MUST NOT increase a previously-sent value"
+        },
+        "deadline_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retry_after_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "error": {
+      "$anchor": "error",
+      "title": "error",
+      "description": "Connection-fatal; always the last message on the wire before the WS close. OVERVIEW.md §2.7, §2.8.",
+      "type": "object",
+      "required": [
+        "t",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "t": {
+          "const": "error"
+        },
+        "code": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "one 32-bit space shared by RESET and connection errors; 0x0000-0x0FFF reserved for ws-mixer, >=0x10000000 free for the layer above"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "MUST contain at least one number that came off the wire"
+        },
+        "stream_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "last_stream_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "app": {
+      "$anchor": "app",
+      "title": "app",
+      "description": "Opaque application payload, legal in both directions any time after welcome. OVERVIEW.md §2.7 decision 4.",
+      "type": "object",
+      "required": [
+        "t",
+        "body"
+      ],
+      "properties": {
+        "t": {
+          "const": "app"
+        },
+        "body": {
+          "type": "object",
+          "description": "opaque to ws-mixer; delivered verbatim to the application"
+        }
+      }
+    }
+  }
+}

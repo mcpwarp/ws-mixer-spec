@@ -1,0 +1,19 @@
+{
+  "description": "DATA arrives for a stream id greater than highest_opened -- it was never opened, so this cannot be a benign race. OVERVIEW.md section 2.5 receiving table: connection PROTOCOL_ERROR.",
+  "role": "server",
+  "steps": [
+    {
+      "recv": {
+        "type": "DATA",
+        "stream_id": 999,
+        "payload_hex": "00"
+      }
+    },
+    {
+      "expect": {
+        "error_code": "PROTOCOL_ERROR",
+        "close_code": 4001
+      }
+    }
+  ]
+}

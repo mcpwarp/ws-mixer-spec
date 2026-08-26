@@ -1,0 +1,13 @@
+{
+  "description": "RESET frame with error_code=7 (CANCEL) and a well-formed UTF-8 message",
+  "hex": "04000000000000010000000763616e63656c6c656420627920636c69656e74",
+  "valid": true,
+  "decoded": {
+    "type": "RESET",
+    "flags": 0,
+    "stream_id": 1,
+    "code": 7,
+    "message": "cancelled by client"
+  },
+  "expect": null
+}

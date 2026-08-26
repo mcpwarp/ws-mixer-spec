@@ -1,0 +1,10 @@
+{
+  "description": "RESET frame with a 2-byte payload, less than the required 4-byte error_code. OVERVIEW.md section 2.3: RESET '< 4 bytes' -> conn FRAME_SIZE_ERROR",
+  "hex": "04000000000000010001",
+  "valid": false,
+  "decoded": null,
+  "expect": {
+    "error_code": "FRAME_SIZE_ERROR",
+    "connection_fatal": true
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "description": "OPEN for stream id 2 (even); only the server opens streams and server-opened ids are always odd per OVERVIEW.md section 2.5",
+  "hex": "0000000000000002",
+  "valid": false,
+  "decoded": null,
+  "expect": {
+    "error_code": "PROTOCOL_ERROR",
+    "connection_fatal": true
+  }
+}

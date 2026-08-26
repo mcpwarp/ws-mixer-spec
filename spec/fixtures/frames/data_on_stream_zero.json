@@ -1,0 +1,12 @@
+{
+  "description": "DATA frame on stream 0 carrying a control-channel JSON object. This is legal and required -- stream 0 DATA is the control channel itself (OVERVIEW.md section 2.3); it is NOT one of the frame types disallowed on stream 0 (OPEN/CLOSE/RESET/WINDOW are)",
+  "hex": "01000000000000007b2274223a2270696e67222c226964223a312c227473223a313735363133373630303132337d",
+  "valid": true,
+  "decoded": {
+    "type": "DATA",
+    "flags": 0,
+    "stream_id": 0,
+    "payload_hex": "7b2274223a2270696e67222c226964223a312c227473223a313735363133373630303132337d"
+  },
+  "expect": null
+}

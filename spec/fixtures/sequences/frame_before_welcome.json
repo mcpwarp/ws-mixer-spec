@@ -1,0 +1,10 @@
+{
+  "description": "From the CLIENT's perspective: a mux frame (OPEN) arrives before welcome completes the handshake. OVERVIEW.md section 2.9: 'the server may send nothing at all before welcome'; section 2.7 envelope table: 'Frame before hello/welcome completes' -> conn PROTOCOL_ERROR.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "type": "OPEN", "stream_id": 1 } },
+    { "send": { "t": "error", "code": 1, "message": "OPEN frame received before welcome completed the handshake" } },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

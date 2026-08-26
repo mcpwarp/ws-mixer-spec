@@ -1,0 +1,14 @@
+{
+  "description": "welcome at the ping_interval floor (5000ms) with ping_timeout at exactly 2x it",
+  "message": {
+    "t": "welcome",
+    "v": 1,
+    "session": "01J8Z2K9QF3M4N5P6R7S8T9V0X",
+    "window": 262144,
+    "max_streams": 64,
+    "ping_interval": 5000,
+    "ping_timeout": 10000
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

@@ -1,0 +1,7 @@
+{
+  "description": "A well-formed JSON object with no `t` discriminator field at all. OVERVIEW.md section 2.7 envelope table: missing t -> conn PROTOCOL_ERROR, message names the offending field",
+  "message": { "v": 1, "token": "abc" },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "t" }
+}

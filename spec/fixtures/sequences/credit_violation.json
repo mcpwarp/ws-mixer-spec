@@ -1,0 +1,55 @@
+{
+  "description": "Peer sends more DATA than the credit it was granted -- connection-fatal per OVERVIEW.md section 2.6 decision 1, not a stream reset, because the receiver already read the bytes off the wire and a stream-scoped reset would leave the two credit counters permanently desynchronised.",
+  "role": "server",
+  "steps": [
+    {
+      "recv": {
+        "t": "hello",
+        "v": 1,
+        "token": "t",
+        "agent": {
+          "sdk": "ws-mixer-js",
+          "sdk_version": "1.0.0"
+        },
+        "window": 16384
+      }
+    },
+    {
+      "send": {
+        "t": "welcome",
+        "v": 1,
+        "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W",
+        "window": 16384,
+        "max_streams": 64,
+        "ping_interval": 30000,
+        "ping_timeout": 90000
+      }
+    },
+    {
+      "send": {
+        "type": "OPEN",
+        "stream_id": 1
+      }
+    },
+    {
+      "recv": {
+        "type": "DATA",
+        "stream_id": 1,
+        "payload_length": 20480
+      }
+    },
+    {
+      "send": {
+        "t": "error",
+        "code": 3,
+        "message": "stream 1: received 20480 DATA bytes with 16384 credit remaining"
+      }
+    },
+    {
+      "expect": {
+        "error_code": "FLOW_CONTROL_ERROR",
+        "close_code": 4003
+      }
+    }
+  ]
+}

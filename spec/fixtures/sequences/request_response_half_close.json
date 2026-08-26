@@ -1,0 +1,65 @@
+{
+  "description": "Server opens a stream, sends a chunked request, half-closes (CLOSE means no more DATA from server), the client keeps responding for a while (half-closed-remote from the server's view), then the client closes too and the stream is fully closed. Mirrors OVERVIEW.md section 2.5 'Request/response, end to end' table.",
+  "role": "server",
+  "steps": [
+    {
+      "send": {
+        "type": "OPEN",
+        "stream_id": 1
+      }
+    },
+    {
+      "send": {
+        "type": "DATA",
+        "stream_id": 1,
+        "payload_hex": "474554202f20485454502f312e31"
+      }
+    },
+    {
+      "expect": {
+        "stream_state": "open"
+      }
+    },
+    {
+      "send": {
+        "type": "CLOSE",
+        "stream_id": 1
+      }
+    },
+    {
+      "expect": {
+        "stream_state": "half_closed_local"
+      }
+    },
+    {
+      "recv": {
+        "type": "WINDOW",
+        "stream_id": 1,
+        "increment": 16384
+      }
+    },
+    {
+      "recv": {
+        "type": "DATA",
+        "stream_id": 1,
+        "payload_hex": "485454502f312e3120323030204f4b"
+      }
+    },
+    {
+      "expect": {
+        "stream_state": "half_closed_local"
+      }
+    },
+    {
+      "recv": {
+        "type": "CLOSE",
+        "stream_id": 1
+      }
+    },
+    {
+      "expect": {
+        "stream_state": "closed"
+      }
+    }
+  ]
+}

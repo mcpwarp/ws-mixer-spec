@@ -1,0 +1,38 @@
+{
+  "description": "Server RESETs a stream; a DATA frame that was already in flight from the client arrives afterward. OVERVIEW.md section 2.5 decision 3: a frame for a stream that was open and is now gone is a benign race -- discard, count wsmixer_stale_frames_total, log at debug. It is NOT an error.",
+  "role": "server",
+  "steps": [
+    {
+      "send": {
+        "type": "OPEN",
+        "stream_id": 1
+      }
+    },
+    {
+      "send": {
+        "type": "RESET",
+        "stream_id": 1,
+        "code": 7,
+        "message": "cancelled"
+      }
+    },
+    {
+      "expect": {
+        "stream_state": "closed"
+      }
+    },
+    {
+      "recv": {
+        "type": "DATA",
+        "stream_id": 1,
+        "payload_hex": "746f6f206c617465"
+      }
+    },
+    {
+      "expect": {
+        "stream_state": "closed",
+        "error_code": null
+      }
+    }
+  ]
+}

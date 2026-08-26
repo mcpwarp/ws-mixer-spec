@@ -1,0 +1,12 @@
+{
+  "description": "OPEN frame for server-opened stream id 1 (odd); OPEN carries no payload",
+  "hex": "0000000000000001",
+  "valid": true,
+  "decoded": {
+    "type": "OPEN",
+    "flags": 0,
+    "stream_id": 1,
+    "payload_hex": ""
+  },
+  "expect": null
+}

@@ -1,0 +1,11 @@
+{
+  "description": "hello with only the required fields present",
+  "message": {
+    "t": "hello",
+    "v": 1,
+    "token": "eyJhbGciOiJIUzI1NiJ9.abc123",
+    "agent": { "sdk": "ws-mixer-py", "sdk_version": "0.2.0" }
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

@@ -1,0 +1,12 @@
+{
+  "description": "CLOSE frame with 4 trailing bytes after the header. OVERVIEW.md section 2.3: CLOSE payload is empty; trailing bytes MUST be ignored and counted, not rejected",
+  "hex": "0300000000000001deadbeef",
+  "valid": true,
+  "decoded": {
+    "type": "CLOSE",
+    "flags": 0,
+    "stream_id": 1,
+    "payload_hex": "deadbeef"
+  },
+  "expect": null
+}

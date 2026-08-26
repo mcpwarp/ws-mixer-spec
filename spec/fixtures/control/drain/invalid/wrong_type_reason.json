@@ -1,0 +1,7 @@
+{
+  "description": "drain.reason must be a string, not an integer",
+  "message": { "t": "drain", "reason": 1, "last_stream_id": 512 },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "reason" }
+}

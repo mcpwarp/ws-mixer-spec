@@ -1,0 +1,10 @@
+{
+  "description": "stream_id 0x80000001 has the reserved high bit set; MUST be 0 per OVERVIEW.md section 2.2/2.5",
+  "hex": "010000008000000178",
+  "valid": false,
+  "decoded": null,
+  "expect": {
+    "error_code": "PROTOCOL_ERROR",
+    "connection_fatal": true
+  }
+}

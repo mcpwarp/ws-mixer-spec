@@ -1,0 +1,9 @@
+{
+  "description": "A stream-0 JSON object arrives with a `t` value outside the v1 seven and not covered by any advertised capability. OVERVIEW.md section 2.7 decision 5: unknown t is always a connection PROTOCOL_ERROR.",
+  "role": "server",
+  "steps": [
+    { "recv": { "t": "regsiter", "id": "anki" } },
+    { "send": { "t": "error", "code": 1, "message": "unknown control message type \"regsiter\"" } },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

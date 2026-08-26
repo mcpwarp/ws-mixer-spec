@@ -1,0 +1,12 @@
+{
+  "description": "DATA frame carrying an 11-byte opaque application payload on stream 1",
+  "hex": "010000000000000168656c6c6f20776f726c64",
+  "valid": true,
+  "decoded": {
+    "type": "DATA",
+    "flags": 0,
+    "stream_id": 1,
+    "payload_hex": "68656c6c6f20776f726c64"
+  },
+  "expect": null
+}

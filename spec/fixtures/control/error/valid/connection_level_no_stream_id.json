@@ -1,0 +1,6 @@
+{
+  "description": "connection-level error with no attributable stream, e.g. keepalive timeout",
+  "message": { "t": "error", "code": 13, "message": "no pong received for 92000ms" },
+  "schema_valid": true,
+  "wire_valid": true
+}

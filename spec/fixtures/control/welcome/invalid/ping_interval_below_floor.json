@@ -1,0 +1,15 @@
+{
+  "description": "welcome.ping_interval below the 5000ms floor -- server MUST NOT set it lower, client rejects with PROTOCOL_ERROR",
+  "message": {
+    "t": "welcome",
+    "v": 1,
+    "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W",
+    "window": 262144,
+    "max_streams": 64,
+    "ping_interval": 1000,
+    "ping_timeout": 90000
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "ping_interval" }
+}

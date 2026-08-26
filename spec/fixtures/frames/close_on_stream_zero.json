@@ -1,0 +1,10 @@
+{
+  "description": "CLOSE frame on stream 0; OPEN/CLOSE/RESET/WINDOW on stream 0 are a connection PROTOCOL_ERROR (only DATA is legal on stream 0, carrying control-channel JSON)",
+  "hex": "0300000000000000",
+  "valid": false,
+  "decoded": null,
+  "expect": {
+    "error_code": "PROTOCOL_ERROR",
+    "connection_fatal": true
+  }
+}

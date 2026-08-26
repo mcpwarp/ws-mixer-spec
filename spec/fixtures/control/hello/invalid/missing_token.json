@@ -1,0 +1,11 @@
+{
+  "description": "hello missing the required token field",
+  "message": {
+    "t": "hello",
+    "v": 1,
+    "agent": { "sdk": "ws-mixer-py", "sdk_version": "0.2.0" }
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "token" }
+}

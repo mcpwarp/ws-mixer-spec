@@ -1,0 +1,7 @@
+{
+  "description": "ping.id exceeds the 2^53-1 boundary",
+  "message": { "t": "ping", "id": 9007199254740992 },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "id" }
+}

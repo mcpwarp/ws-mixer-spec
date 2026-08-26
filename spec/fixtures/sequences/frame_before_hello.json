@@ -1,0 +1,19 @@
+{
+  "description": "A mux frame arrives before hello completes the handshake. OVERVIEW.md section 2.7 envelope table: 'Frame before hello/welcome completes' is a connection PROTOCOL_ERROR.",
+  "role": "server",
+  "steps": [
+    {
+      "recv": {
+        "type": "WINDOW",
+        "stream_id": 1,
+        "increment": 1024
+      }
+    },
+    {
+      "expect": {
+        "error_code": "PROTOCOL_ERROR",
+        "close_code": 4001
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "description": "Stream-0 DATA payload is a bare JSON string scalar, not an object. OVERVIEW.md section 2.7 envelope table: 'Malformed JSON, non-object, missing t, t not a string' -> conn PROTOCOL_ERROR",
+  "message": "hello",
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "object" }
+}

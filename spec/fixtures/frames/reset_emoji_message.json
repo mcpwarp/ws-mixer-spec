@@ -1,0 +1,13 @@
+{
+  "description": "RESET frame (code=7 CANCEL) with a valid multi-byte UTF-8 message containing an emoji. OVERVIEW.md section 2.3/2.4: RESET message is UTF-8; multi-byte sequences are legal",
+  "hex": "04000000000000010000000763616e63656c6c656420f09f9880",
+  "valid": true,
+  "decoded": {
+    "type": "RESET",
+    "flags": 0,
+    "stream_id": 1,
+    "code": 7,
+    "message": "cancelled 😀"
+  },
+  "expect": null
+}

@@ -1,0 +1,13 @@
+{
+  "description": "hello with an unrecognized top-level field (e.g. a typo of max_streams). This IS tolerated by the wire at runtime for forward compatibility (OVERVIEW.md section 2.7 'Envelope validation and forward compatibility': unknown field inside a known t is ignored), but control.schema.json is the strict test-time conformance oracle (additionalProperties:false on every leaf) and is deliberately stricter here so it catches field-name typos during development -- see OVERVIEW.md section 6 and the schema's own top-level description.",
+  "message": {
+    "t": "hello",
+    "v": 1,
+    "token": "eyJhbGciOiJIUzI1NiJ9.abc123",
+    "agent": { "sdk": "ws-mixer-py", "sdk_version": "0.2.0" },
+    "max_stream": 64
+  },
+  "schema_valid": false,
+  "wire_valid": true,
+  "expect": { "error_code": "SCHEMA_ADDITIONAL_PROPERTIES", "message_contains": "max_stream" }
+}

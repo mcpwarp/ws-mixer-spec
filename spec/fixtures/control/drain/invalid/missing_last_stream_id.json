@@ -1,0 +1,7 @@
+{
+  "description": "drain missing the required last_stream_id field",
+  "message": { "t": "drain", "reason": "rollout" },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "last_stream_id" }
+}

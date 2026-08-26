@@ -1,0 +1,10 @@
+{
+  "description": "OPEN frame on stream 0. OVERVIEW.md section 2.5/2.8: OPEN/CLOSE/RESET/WINDOW on stream 0 is a connection PROTOCOL_ERROR -- only DATA is legal on stream 0",
+  "hex": "0000000000000000",
+  "valid": false,
+  "decoded": null,
+  "expect": {
+    "error_code": "PROTOCOL_ERROR",
+    "connection_fatal": true
+  }
+}

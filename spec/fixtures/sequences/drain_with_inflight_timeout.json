@@ -1,0 +1,45 @@
+{
+  "description": "Server drains with an in-flight stream that never finishes before the deadline. At the deadline the server RESETs every survivor with CANCEL, then sends error{GOING_AWAY} and closes with 4012. Mirrors OVERVIEW.md section 2.9 'Drain' sequence diagram exactly, including the close code (0x0c GOING_AWAY -> 4000+12=4012, per section 2.8's table and mechanical rule).",
+  "role": "server",
+  "steps": [
+    {
+      "send": {
+        "type": "OPEN",
+        "stream_id": 1
+      }
+    },
+    {
+      "send": {
+        "t": "drain",
+        "reason": "rollout",
+        "last_stream_id": 1,
+        "deadline_ms": 25000
+      }
+    },
+    {
+      "wait_ms": 25000
+    },
+    {
+      "send": {
+        "type": "RESET",
+        "stream_id": 1,
+        "code": 7,
+        "message": "draining: rollout"
+      }
+    },
+    {
+      "send": {
+        "t": "error",
+        "code": 12,
+        "message": "draining: rollout"
+      }
+    },
+    {
+      "expect": {
+        "error_code": "GOING_AWAY",
+        "close_code": 4012,
+        "stream_state": "closed"
+      }
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "description": "Baseline: hello -> welcome, then a full server-opened request/response stream to closed. Mirrors OVERVIEW.md section 2.9 handshake diagram and section 2.5's request/response table.",
+  "role": "server",
+  "steps": [
+    {
+      "recv": {
+        "t": "hello",
+        "v": 1,
+        "token": "eyJhbGciOi.abc",
+        "agent": {
+          "sdk": "ws-mixer-js",
+          "sdk_version": "0.3.1"
+        },
+        "window": 262144,
+        "max_streams": 64
+      }
+    },
+    {
+      "send": {
+        "t": "welcome",
+        "v": 1,
+        "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W",
+        "window": 262144,
+        "max_streams": 64,
+        "ping_interval": 30000,
+        "ping_timeout": 90000
+      }
+    },
+    {
+      "send": {
+        "type": "OPEN",
+        "stream_id": 1
+      }
+    },
+    {
+      "send": {
+        "type": "DATA",
+        "stream_id": 1,
+        "payload_hex": "68656c6c6f"
+      }
+    },
+    {
+      "send": {
+        "type": "CLOSE",
+        "stream_id": 1
+      }
+    },
+    {
+      "recv": {
+        "type": "DATA",
+        "stream_id": 1,
+        "payload_hex": "776f726c64"
+      }
+    },
+    {
+      "recv": {
+        "type": "WINDOW",
+        "stream_id": 1,
+        "increment": 5
+      }
+    },
+    {
+      "recv": {
+        "type": "CLOSE",
+        "stream_id": 1
+      }
+    },
+    {
+      "expect": {
+        "stream_state": "closed"
+      }
+    }
+  ]
+}

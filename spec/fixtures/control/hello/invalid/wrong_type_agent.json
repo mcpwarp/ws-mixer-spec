@@ -1,0 +1,12 @@
+{
+  "description": "hello.agent must be an object, not a string",
+  "message": {
+    "t": "hello",
+    "v": 1,
+    "token": "eyJhbGciOiJIUzI1NiJ9.abc123",
+    "agent": "ws-mixer-py/0.2.0"
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "agent" }
+}

@@ -1,0 +1,7 @@
+{
+  "description": "last_stream_id of 2^31 (2147483648) has the reserved high bit set -- stream ids are 31-bit per OVERVIEW.md section 2.5, so the maximum legal value is 2^31-1",
+  "message": { "t": "drain", "reason": "id_exhausted", "last_stream_id": 2147483648 },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "last_stream_id" }
+}

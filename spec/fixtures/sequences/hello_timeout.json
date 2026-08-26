@@ -1,0 +1,9 @@
+{
+  "description": "No hello arrives within 10s of the 101 response. OVERVIEW.md section 2.9: server closes with error{PROTOCOL_ERROR} + WS close 4001.",
+  "role": "server",
+  "steps": [
+    { "wait_ms": 10000 },
+    { "send": { "t": "error", "code": 1, "message": "no hello within 10000ms of connection accept" } },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

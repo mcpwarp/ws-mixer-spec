@@ -1,0 +1,13 @@
+{
+  "description": "hello at the window lower boundary (16384) with an empty (opaque) meta object",
+  "message": {
+    "t": "hello",
+    "v": 1,
+    "token": "short-token",
+    "agent": { "sdk": "ws-mixer-go", "sdk_version": "0.1.0" },
+    "window": 16384,
+    "meta": {}
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

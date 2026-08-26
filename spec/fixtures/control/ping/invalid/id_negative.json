@@ -1,0 +1,7 @@
+{
+  "description": "ping.id must not be negative",
+  "message": { "t": "ping", "id": -1 },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "id" }
+}

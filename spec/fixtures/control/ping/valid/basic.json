@@ -1,0 +1,6 @@
+{
+  "description": "ping with id and ts",
+  "message": { "t": "ping", "id": 42, "ts": 1756137600123 },
+  "schema_valid": true,
+  "wire_valid": true
+}

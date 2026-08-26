@@ -1,0 +1,9 @@
+{
+  "description": "app carrying an opaque mcpwarp-defined body; ws-mixer does not parse it beyond 'is a JSON object'",
+  "message": {
+    "t": "app",
+    "body": { "mcpwarp": { "v": 1, "op": "register", "services": [{ "id": "anki", "name": "Anki MCP" }] } }
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}
