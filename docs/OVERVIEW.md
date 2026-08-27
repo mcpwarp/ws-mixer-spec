@@ -833,6 +833,12 @@ await conn.close();                              // drain{client_requested}, 5 s
 Reconnect options: `{ base, cap, connectTimeout, maxAttempts, jitter }`, full jitter by default, counter
 reset on `welcome`. `drain` → immediate parallel reconnect with 0–2 s jitter regardless of `base`.
 
+The JS SDK's "ignore and count" counters (unknown frame types, stale frames, duplicate pongs, refused
+opens, protocol violations, bytes in/out) are exposed via `client.stats()`, but v1 does not escalate a
+sustained run of any of them to a connection error the way the Go server's `STREAM_LIMIT`/refused-OPEN
+flood guard does (`repeatRefusedOpen`, §2.9's error table) — a client seeing repeated `STREAM_LIMIT`
+resets just keeps counting. That escalation is left for a later revision.
+
 ---
 
 ## 5. How mcpwarp uses ws-mixer
