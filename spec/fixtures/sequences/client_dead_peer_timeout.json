@@ -1,0 +1,10 @@
+{
+  "description": "Mirror of ping_pong_then_dead_peer_timeout.json from the CLIENT's perspective: the server never answers any of the client's own pings, and the client's keepalive watchdog fires. OVERVIEW.md section 2.9 Keepalive: measured from last_pong_received (here, welcome time, since no pong ever arrives), watchdog fires once elapsed strictly exceeds ping_timeout. welcome uses the wire floor values (ping_interval 30000ms, ping_timeout 90000ms, i.e. exactly 2x, per section 2.7's welcome field table). wait_ms (95000) is plain protocol time: past ping_timeout (90000ms) plus margin for the watchdog's own poll granularity.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "wait_ms": 95000 },
+    { "expect": { "error_code": "KEEPALIVE_TIMEOUT", "close_code": 4013 } }
+  ]
+}

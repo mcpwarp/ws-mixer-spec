@@ -1,4 +1,4 @@
 {
   "_comment": "Checked-in floor for the total number of *.json files under spec/fixtures/ (control + frames + sequences), read by spec/tools/check-fixtures.mjs. CI fails if the corpus shrinks below this number. Bump it upward whenever fixtures are added; never lower it to make a regression pass.",
-  "minimum_total_fixtures": 97
+  "minimum_total_fixtures": 119
 }

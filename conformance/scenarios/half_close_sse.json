@@ -1,0 +1,22 @@
+{
+  "description": "Server opens a stream, sends one request chunk and half-closes (CLOSE means no more DATA from the server); the client then streams several chunks back before closing its own write side, exercising half_closed_remote on the server across multiple client writes -- an SSE-response shape.",
+  "steps": [
+    { "actor": "server", "cmd": { "cmd": "open_stream" } },
+    { "actor": "server", "await": { "event": "stream_opened" } },
+    { "actor": "client", "await": { "event": "stream_opened" } },
+    { "actor": "server", "cmd": { "cmd": "write", "id": 1, "data_b64": "R0VU" } },
+    { "actor": "server", "cmd": { "cmd": "close_write", "id": 1 } },
+    { "actor": "client", "await": { "event": "data", "id": 1, "data_b64": "R0VU" } },
+    { "actor": "client", "await": { "event": "stream_closed", "id": 1, "direction": "read" } },
+
+    { "actor": "client", "cmd": { "cmd": "write", "id": 1, "data_b64": "ZXZlbnQ6IDE=" } },
+    { "actor": "server", "await": { "event": "data", "id": 1, "data_b64": "ZXZlbnQ6IDE=" } },
+    { "actor": "client", "cmd": { "cmd": "write", "id": 1, "data_b64": "ZXZlbnQ6IDI=" } },
+    { "actor": "server", "await": { "event": "data", "id": 1, "data_b64": "ZXZlbnQ6IDI=" } },
+    { "actor": "client", "cmd": { "cmd": "write", "id": 1, "data_b64": "ZXZlbnQ6IDM=" } },
+    { "actor": "server", "await": { "event": "data", "id": 1, "data_b64": "ZXZlbnQ6IDM=" } },
+
+    { "actor": "client", "cmd": { "cmd": "close_write", "id": 1 } },
+    { "actor": "server", "await": { "event": "stream_closed", "id": 1, "direction": "read" } }
+  ]
+}

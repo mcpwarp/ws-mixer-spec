@@ -1,7 +1,8 @@
 {
-  "description": "Server (mis)opens a stream beyond the negotiated max_streams cap. Only the server opens streams, so it is the CLIENT that must detect the cap violation and refuse the extra stream. OVERVIEW.md section 2.8 error table: 'OPEN beyond max_streams -> stream STREAM_LIMIT (repeat offence -> conn ENHANCE_YOUR_CALM)'; the same table's per-code list shows STREAM_LIMIT is client-sent only, which matches (only the server opens, so only the client is ever in a position to detect this).",
+  "description": "Server (mis)opens a stream beyond the negotiated max_streams cap. Only the server opens streams, so it is the CLIENT that must detect the cap violation and refuse the extra stream. OVERVIEW.md section 2.8 error table: 'OPEN beyond max_streams -> stream STREAM_LIMIT (repeat offence -> conn ENHANCE_YOUR_CALM)'; the same table's per-code list shows STREAM_LIMIT is client-sent only, which matches (only the server opens, so only the client is ever in a position to detect this). Scripts its own hello/welcome handshake (rather than relying on a synthetic one) so it doesn't conflict with two_welcomes.json's premise that a second welcome after a completed handshake is itself a distinct, connection-fatal violation.",
   "role": "client",
   "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
     {
       "recv": {
         "t": "welcome",

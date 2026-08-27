@@ -1,0 +1,16 @@
+{
+  "description": "Baseline: server opens one stream, writes a request, half-closes; client responds and half-closes back.",
+  "steps": [
+    { "actor": "server", "cmd": { "cmd": "open_stream" } },
+    { "actor": "server", "await": { "event": "stream_opened" } },
+    { "actor": "client", "await": { "event": "stream_opened" } },
+    { "actor": "server", "cmd": { "cmd": "write", "id": 1, "data_b64": "cmVx" } },
+    { "actor": "client", "await": { "event": "data", "id": 1, "data_b64": "cmVx" } },
+    { "actor": "server", "cmd": { "cmd": "close_write", "id": 1 } },
+    { "actor": "client", "await": { "event": "stream_closed", "id": 1, "direction": "read" } },
+    { "actor": "client", "cmd": { "cmd": "write", "id": 1, "data_b64": "cmVzcA==" } },
+    { "actor": "server", "await": { "event": "data", "id": 1, "data_b64": "cmVzcA==" } },
+    { "actor": "client", "cmd": { "cmd": "close_write", "id": 1 } },
+    { "actor": "server", "await": { "event": "stream_closed", "id": 1, "direction": "read" } }
+  ]
+}

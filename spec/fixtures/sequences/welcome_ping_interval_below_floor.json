@@ -1,0 +1,9 @@
+{
+  "description": "welcome.ping_interval is set below the 5000ms wire floor. OVERVIEW.md section 2.7 welcome field table: 'ping_interval ... server MUST NOT set < 5000; client rejects smaller with PROTOCOL_ERROR.' schema_exempt: true because control.schema.json encodes the same 5000ms floor as `minimum: 5000`, so ping_interval:4000 is schema-invalid by construction -- that IS the case under test, not a fixture mistake.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 4000, "ping_timeout": 90000 }, "schema_exempt": true },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

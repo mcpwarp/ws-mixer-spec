@@ -1,0 +1,11 @@
+{
+  "_comment": "docs/CONFORMANCE.md section 3.3: per-{fixture, step_index} overrides for how a `send` step in spec/fixtures/sequences/*.json is driven. Default classification (implemented in conformance/runner/driver): a `send RESET` step is issued as a `reset` command unless its code is STREAM_LIMIT or STREAM_CLOSED (structurally always autonomous -- the SDK detects the violation itself), in which case it is observed only. The one case that default rule cannot detect from the code alone is a RESET produced by a Drain deadline sweep (CANCEL, the same code a deliberate application-level Reset also uses) -- that needs this sidecar, so spec/fixtures/ itself stays untouched (open question 1, decided in favour of the sidecar).",
+  "overrides": [
+    {
+      "fixture": "drain_with_inflight_timeout",
+      "step_index": 3,
+      "driver": "auto",
+      "why": "This RESET(CANCEL) is emitted by the server's own Drain() deadline sweep over surviving streams, not a command the runner issues."
+    }
+  ]
+}

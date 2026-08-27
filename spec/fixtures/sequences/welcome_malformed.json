@@ -1,0 +1,9 @@
+{
+  "description": "welcome arrives missing a required field (`window`). OVERVIEW.md section 2.7's welcome field table marks `window` required; section 2.7 envelope table's general rule for a malformed control message on stream 0 is conn PROTOCOL_ERROR, and this must be caught before any stream is ever opened (highest_opened stays 0). schema_exempt: true because a welcome missing a required field is schema-invalid by construction, which is exactly the case under test, not a fixture mistake.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 }, "schema_exempt": true },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

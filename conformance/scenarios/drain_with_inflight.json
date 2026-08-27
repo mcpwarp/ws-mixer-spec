@@ -1,0 +1,13 @@
+{
+  "description": "Server opens a stream (left in-flight, never closed by either side) then drains with a deadline; the deadline sweep RESETs the survivor with CANCEL and the connection ends with GOING_AWAY/4012. Mirrors spec/fixtures/sequences/drain_with_inflight_timeout.json's shape, but end to end between two real SDKs instead of the raw actor.",
+  "steps": [
+    { "actor": "server", "cmd": { "cmd": "open_stream" } },
+    { "actor": "server", "await": { "event": "stream_opened", "id": 1 } },
+    { "actor": "client", "await": { "event": "stream_opened", "id": 1 } },
+    { "actor": "server", "cmd": { "cmd": "drain", "reason": "rollout", "deadline_ms": 500 } },
+    { "actor": "client", "await": { "event": "drain", "reason": "rollout" } },
+    { "actor": "client", "await": { "event": "stream_reset", "id": 1 } },
+    { "actor": "client", "await": { "event": "disconnected" } },
+    { "actor": "server", "await": { "event": "disconnected" } }
+  ]
+}

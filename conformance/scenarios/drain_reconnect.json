@@ -1,0 +1,23 @@
+{
+  "description": "Go server drains a stream in flight; the JS client (started with reconnect enabled -- coordination contract with conformance/runner: the runner passes connect.reconnect={enabled:true} only for this scenario, since every other scenario relies on the JS adapter's default one-shot maxAttempts:0) sees drain, the survivor stream is RESET with CANCEL, and the connection closes with GOING_AWAY/4012. MixerClient's own reconnect loop then redials the same listener and the adapter surfaces that as `reconnected` (docs/CONFORMANCE.md section 1.2, coordination contract (b)). A fresh stream opened after reconnecting round-trips normally, proving the new connection is fully usable rather than just re-established.",
+  "connect": { "reconnect": { "enabled": true } },
+  "steps": [
+    { "actor": "server", "cmd": { "cmd": "open_stream" } },
+    { "actor": "server", "await": { "event": "stream_opened", "id": 1 } },
+    { "actor": "client", "await": { "event": "stream_opened", "id": 1 } },
+    { "actor": "server", "cmd": { "cmd": "drain", "reason": "rollout" } },
+    { "actor": "client", "await": { "event": "drain", "reason": "rollout" } },
+    { "actor": "client", "await": { "event": "stream_reset", "id": 1, "code": "CANCEL" } },
+    { "actor": "client", "await": { "event": "disconnected", "ws_code": 4012 } },
+    { "actor": "server", "await": { "event": "disconnected" } },
+    { "actor": "client", "await": { "event": "reconnected" } },
+
+    { "actor": "server", "cmd": { "cmd": "open_stream" } },
+    { "actor": "server", "await": { "event": "stream_opened", "id": 1 } },
+    { "actor": "client", "await": { "event": "stream_opened", "id": 1 } },
+    { "actor": "server", "cmd": { "cmd": "write", "id": 1, "data_b64": "cmVjb25uZWN0ZWQ=" } },
+    { "actor": "client", "await": { "event": "data", "id": 1, "data_b64": "cmVjb25uZWN0ZWQ=" } },
+    { "actor": "client", "cmd": { "cmd": "write", "id": 1, "data_b64": "b2s=" } },
+    { "actor": "server", "await": { "event": "data", "id": 1, "data_b64": "b2s=" } }
+  ]
+}

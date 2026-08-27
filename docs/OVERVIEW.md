@@ -273,7 +273,7 @@ never two objects in one frame.
 
 | Field | Type | Req | Notes |
 |---|---|:--:|---|
-| `v` | integer | ✔ | version accepted |
+| `v` | integer | ✔ | version accepted. If the client does not support this `v` (or otherwise finds `welcome` unsupported), mismatch → client closes with `UNSUPPORTED` (4010) |
 | `session` | string ≤ 64 | ✔ | connection id, ULID recommended. In every log line on both sides |
 | `window` | integer | ✔ | the server's own receive window |
 | `max_streams` | integer | ✔ | the **effective** cap = `min(client ask, server policy)`. Client MUST use this, and MAY lower it further to its own ceiling |
@@ -305,6 +305,9 @@ a duplicate `pong` → ignore + count. `pong` is never unsolicited.
 | `message` | string ≤ 256 | | human text for the peer's log |
 
 After sending `drain` the server MUST NOT send `OPEN`; it MAY keep sending DATA/WINDOW/CLOSE/RESET.
+A client receiving `OPEN` with `id` > `last_stream_id` after `drain` MUST treat it as connection
+`PROTOCOL_ERROR` (4001) — strict, not a stream-scoped `REFUSED_STREAM`, because it means the server has
+violated the boundary it already promised.
 An **unknown `reason` is not fatal** — treat as `maintenance` and count. (Closed enums degrade; unknown
 *message types* do not — see below.) The client may send `drain` only with `reason:"client_requested"`.
 
@@ -348,6 +351,10 @@ no third handshake state to specify). Application data that arrives later goes i
 | Frame before `hello`/`welcome` completes | conn `PROTOCOL_ERROR` |
 | Stream-0 payload > 16 KiB, or control flood | conn `ENHANCE_YOUR_CALM` |
 
+Stream-0 message rate: an implementation MUST accept at least 50 messages/second sustained and a burst of
+100; it MAY close with `ENHANCE_YOUR_CALM` (4009) when a peer exceeds burst 100 (token bucket, 50/s refill).
+Payload cap 16 KiB unchanged.
+
 Strictness and extensibility are reconciled by **negotiate, then be strict**: `hello` and `welcome` carry an
 optional `capabilities` array, and **a peer MUST NOT send a message type outside the v1 seven unless the other
 peer advertised the capability that defines it.** So a v1.3 server talking to a v1.0 client never sends the
@@ -376,7 +383,7 @@ Unknown codes MUST NOT trigger special behaviour — treat as `INTERNAL_ERROR`.
 | `0x07` | `CANCEL` | ✔ | | — | ✔ | ✔ | no longer needed; work may have started |
 | `0x08` | `STREAM_LIMIT` | ✔ | | — | | ✔ | `max_streams` exceeded |
 | `0x09` | `ENHANCE_YOUR_CALM` | ✔ | ✔ | 4009 | ✔ | ✔ | excessive load; back off |
-| `0x0a` | `UNSUPPORTED` | | ✔ | 4010 | ✔ | | version/capability mismatch; do not retry unchanged |
+| `0x0a` | `UNSUPPORTED` | | ✔ | 4010 | ✔ | ✔ | version/capability mismatch; do not retry unchanged. Client sends this when `welcome.v` (or `welcome` more generally) is unsupported |
 | `0x0b` | `UNAUTHORIZED` | | ✔ | 4011 | ✔ | | auth failed or expired |
 | `0x0c` | `GOING_AWAY` | | ✔ | 4012 | ✔ | | drain complete; **reconnect immediately** |
 | `0x0d` | `KEEPALIVE_TIMEOUT` | | ✔ | 4013 | ✔ | ✔ | no `pong` within the deadline |
@@ -404,7 +411,7 @@ backoff), `1009` (library rejected an oversized message), `1011` (an SDK left it
 | WINDOW payload ≠ 4 bytes, RESET payload < 4 bytes | connection | `FRAME_SIZE_ERROR` |
 | DATA over remaining credit, or window > 2^31-1 | connection | `FLOW_CONTROL_ERROR` |
 | Malformed JSON / unknown `t` on stream 0 | connection | `PROTOCOL_ERROR` |
-| Stream-0 payload > 16 KiB, control flood | connection | `ENHANCE_YOUR_CALM` |
+| Stream-0 payload > 16 KiB, control flood (see §2.7: burst > 100, sustained > 50/s) | connection | `ENHANCE_YOUR_CALM` |
 | Keepalive deadline missed | connection | `KEEPALIVE_TIMEOUT` |
 | Unknown frame **type** | ignore + count | — |
 | Frame for a previously-open, now-dead stream | discard + count + debug log | — |
@@ -515,6 +522,10 @@ Only **one** `drain` is needed, never HTTP/2's two-GOAWAY dance — because only
 `last_stream_id` is exact on the first send with no race. **Endpoints MUST NOT increase the value they later
 send in `last_stream_id`.** On receiving `drain`, close every locally-opened stream above `last_stream_id`
 with a *retry-safe* error; everything at or below might have been processed and is **not** safe to replay.
+That retry-safe treatment applies to streams the client itself already had open before `drain` arrived — it
+does **not** extend to a **new** `OPEN` the server sends afterward for an id above `last_stream_id`: per
+§2.7, that is a connection `PROTOCOL_ERROR` (4001), since only the server opens streams and it already
+promised not to open any past that boundary.
 
 Kubernetes rollout shape, since it drives the numbers:
 
@@ -767,6 +778,24 @@ trace headers ride in the DATA payload where the HTTP layer already puts headers
 
 ## 4. JS client SDK
 
+### 4.0 Client SDK requirements (all languages)
+
+These are behavioural requirements for **every** client SDK — JS today, Python next, a Go client if one is
+ever built. They are stated once here so a new SDK has a checklist independent of any one language's sketch.
+
+| Requirement | Rule |
+|---|---|
+| Reconnect / backoff | Exactly the state machine in §2.9 "Reconnect" — full-jitter backoff, attempt reset only on `welcome`, drain/`4012` handling, fatal-close handling. Not restated here; implement that table. |
+| Token provider | `token` MAY be a static string or a callback returning a fresh token (sync or `Promise`). The callback MUST be invoked on **every** dial, not cached across reconnects. |
+| 401 on upgrade | The SDK calls the token provider **once more** and retries the dial **immediately** (no backoff). A **second** HTTP 401 is fatal. |
+| Provider failure | A token provider that throws or rejects is **fatal**: no retry, the thrown/rejected error is surfaced verbatim to the caller. |
+| Disconnect reason shape | Every disconnect (recoverable or fatal) is reported as one object carrying: `phase` (`"dial"` \| `"handshake"` \| `"connected"`), `wsCode` when a WS close occurred, `errorCode`/name when a ws-mixer error preceded it, `httpStatus` when the upgrade itself failed, `fatal: boolean`, and a human-readable `message`. |
+| Fatal set | Unchanged from §2.9: close `4010`, `4011` (only after the one refresh-retry above has already failed), HTTP `403`, HTTP `404`, missing subprotocol echo. |
+| Handler delivery | Stream, `app`, and `drain` handlers are delivered in wire order from **one** delivery loop per connection, never concurrently with each other — see §3.2's description of `OnStream`/`OnApp`/`OnDrain`, which every client SDK must match. |
+| Stats / counters | The "ignore and count" counters (unknown frame types, stale frames, duplicate pongs, refused opens, protocol violations, bytes in/out) are exposed via a `stats()`-style accessor — see the JS `client.stats()` note below. |
+
+### 4.1 JS specifics
+
 **Package** `@mcpwarp/ws-mixer` (or `ws-mixer` if the name is free). Node 20+ first.
 WebSocket library: **[`ws`](https://github.com/websockets/ws)** on Node — the only serious option, and the
 one whose `bufferedAmount` + `send(data, cb)` pair gives us the write-side backpressure of §2.6 rule 2.
@@ -784,7 +813,7 @@ consumers.
 import { connect } from "@mcpwarp/ws-mixer";
 
 const conn = await connect("wss://edge.mcpwarp.io/v1/tunnel", {
-  token: process.env.MCPWARP_TOKEN!,
+  token: process.env.MCPWARP_TOKEN!,   // string | (() => Promise<string>) — called fresh on every dial
   meta:  { mcpwarp: { v: 1, services: [{ id: "anki", name: "Anki MCP" }] } }, // -> hello.meta
   window: 256 * 1024,
   maxStreams: 64,
@@ -807,6 +836,11 @@ const conn = await connect("wss://edge.mcpwarp.io/v1/tunnel", {
   // Server asked us to go away. The SDK already reconnects; this is for logging/UX.
   onDrain: ({ reason, deadlineMs, message }) =>
     log.info({ reason, deadlineMs }, message ?? "server draining"),
+
+  // Every disconnect, recoverable or fatal. See §4.0 for the shape.
+  onDisconnect: (reason: { phase: "dial" | "handshake" | "connected"; wsCode?: number;
+                           errorCode?: number; httpStatus?: number; fatal: boolean; message: string }) =>
+    log.warn(reason, `disconnected during ${reason.phase}`),
 
   reconnect: { base: 1000, cap: 60_000, connectTimeout: 10_000, maxAttempts: Infinity },
 });
@@ -985,3 +1019,16 @@ Anatoly's approvals, 2026-08-26:
 - Keepalive: in-band `ping`/`pong` on stream 0, `ping_interval` 30 s, `ping_timeout` 90 s.
 - Connection replacement and connection pooling are application policy, built on `Authenticate` +
   `Conn.Drain(reason)` — not something ws-mixer decides.
+
+Anatoly's approvals, 2026-08-27:
+
+- Client-SDK requirements generalized: token provider with one refresh-retry on 401; disconnect reason
+  carries `httpStatus`/`phase`. Requested by the mcpwarp CLI; applies to all client SDKs.
+- `UNSUPPORTED` (0x0a / 4010) may be sent by the client, not just the server: when `welcome.v` is not a
+  supported version (or `welcome` is otherwise unsupported), the client closes with `UNSUPPORTED` 4010.
+- OPEN above `last_stream_id` after `drain` is a connection error, strict: a client receiving `OPEN` with
+  `id` > `last_stream_id` after `drain` MUST treat it as connection `PROTOCOL_ERROR` (4001), not a
+  stream-scoped `REFUSED_STREAM`.
+- Control-channel flood limits made normative: an implementation MUST accept at least 50 messages/second
+  sustained and a burst of 100 on stream 0; it MAY close with `ENHANCE_YOUR_CALM` (4009) when a peer
+  exceeds burst 100 (token bucket, 50/s refill). Payload cap 16 KiB unchanged.

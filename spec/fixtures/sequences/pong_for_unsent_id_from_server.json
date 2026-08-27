@@ -1,0 +1,10 @@
+{
+  "description": "Mirror of pong_for_unsent_id.json from the CLIENT's perspective: a pong arrives for an id the client never sent. OVERVIEW.md section 2.7: 'A pong for an id never sent -> conn PROTOCOL_ERROR.' Uses id 99, same as pong_for_unsent_id.json's server twin, rather than assuming id 0 is unsent: right after welcome the client has not yet sent any ping (its first ping is jittered, OVERVIEW.md section 2.9) so id 0 would also work here, but 99 needs no such timing argument and stays unsent for the fixture's entire duration regardless of jitter or wait_ms -- no wait_ms needed either way.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "recv": { "t": "pong", "id": 99, "ts": 1756137600500 } },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

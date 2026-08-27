@@ -1,0 +1,11 @@
+{
+  "description": "Mirror of two_hellos.json from the CLIENT's perspective: a second welcome arrives on a connection whose handshake already completed. OVERVIEW.md section 2.10 item 12's control dispatcher rule states this explicitly: 'hello/welcome after the handshake -> conn error', symmetric with the hello side. Connection-fatal PROTOCOL_ERROR.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "expect": { "error_code": null } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

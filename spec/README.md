@@ -225,6 +225,20 @@ on) — see `max_streams_exceeded.json`, where the client resets one offending s
 while the connection itself stays up. Both `error_code` and `stream_reset_code` must be a real name from
 OVERVIEW.md section 2.8's table; `check-fixtures.mjs` checks both.
 
+`role: "client"` fixtures script the mirror image of the (much larger) `role: "server"` corpus: every
+`recv`/`send` is written from the CLIENT implementation's point of view, exercising the handful of
+protocol violations only the client is ever positioned to catch — a server that (mis)opens an even or
+out-of-order stream id, sends a WINDOW/OPEN/CLOSE/RESET on stream 0, floods the control channel, oversteps
+a `drain{last_stream_id}` boundary, DATAs a stream past the client's own advertised window, or answers a
+pong for an id the client never sent — plus the client-side halves of welcome validation (missing field,
+version mismatch, `ping_interval` below the 5000ms floor, a second `welcome`) and keepalive (the client's
+own pings going unanswered until `KEEPALIVE_TIMEOUT`). `reset_on_closed_stream_toward_client.json` and
+`late_data_after_client_reset.json` intentionally use a RESET the *client itself* triggers (a stream-limit
+refusal) rather than an application-driven reset, since a pure wire-level replay harness has no hook to
+command an app-level stream write or reset; `window_exhaustion_then_resume_client.json` is written fully
+protocol-correct for the same reason but is not fully drivable by every harness (see its own
+`description`) — both are documented inline rather than silently adjusted to fit harness limitations.
+
 ## Consuming these fixtures from an SDK test harness
 
 In any language: load every file under `fixtures/control/<type>/{valid,invalid}/`, feed `.message` through

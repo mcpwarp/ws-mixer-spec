@@ -1,0 +1,874 @@
+{
+  "description": "Server floods the client with more than 100 stream-0 messages in a burst (105 `app` messages, chosen to safely clear the 100-message token-bucket burst capacity even accounting for negligible refill during the synchronous loop). OVERVIEW.md section 2.7: \"Stream-0 message rate: an implementation MUST accept at least 50 messages/second sustained and a burst of 100; it MAY close with ENHANCE_YOUR_CALM (4009) when a peer exceeds burst 100 (token bucket, 50/s refill). Payload cap 16 KiB unchanged.\" A conforming implementation enforces this with a 100-token bucket refilling at 50/s, so the 101st message within the burst window is the one that trips it.",
+  "role": "client",
+  "steps": [
+    {
+      "send": {
+        "t": "hello",
+        "v": 1,
+        "token": "eyJhbGciOi.abc",
+        "agent": {
+          "sdk": "ws-mixer-js",
+          "sdk_version": "0.3.1"
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "welcome",
+        "v": 1,
+        "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W",
+        "window": 262144,
+        "max_streams": 64,
+        "ping_interval": 30000,
+        "ping_timeout": 90000
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 0
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 1
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 2
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 3
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 4
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 5
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 6
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 7
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 8
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 9
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 10
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 11
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 12
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 13
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 14
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 15
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 16
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 17
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 18
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 19
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 20
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 21
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 22
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 23
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 24
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 25
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 26
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 27
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 28
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 29
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 30
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 31
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 32
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 33
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 34
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 35
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 36
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 37
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 38
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 39
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 40
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 41
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 42
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 43
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 44
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 45
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 46
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 47
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 48
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 49
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 50
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 51
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 52
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 53
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 54
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 55
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 56
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 57
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 58
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 59
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 60
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 61
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 62
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 63
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 64
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 65
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 66
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 67
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 68
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 69
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 70
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 71
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 72
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 73
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 74
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 75
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 76
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 77
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 78
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 79
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 80
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 81
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 82
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 83
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 84
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 85
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 86
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 87
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 88
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 89
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 90
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 91
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 92
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 93
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 94
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 95
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 96
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 97
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 98
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 99
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 100
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 101
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 102
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 103
+        }
+      }
+    },
+    {
+      "recv": {
+        "t": "app",
+        "body": {
+          "i": 104
+        }
+      }
+    },
+    {
+      "expect": {
+        "error_code": "ENHANCE_YOUR_CALM",
+        "close_code": 4009
+      }
+    }
+  ]
+}

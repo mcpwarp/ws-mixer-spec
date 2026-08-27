@@ -1,0 +1,15 @@
+{
+  "description": "The client RESETs a stream on its own initiative (here, refusing an OPEN beyond max_streams=1, per max_streams_exceeded.json's STREAM_LIMIT precedent -- the only RESET this wire-scripted harness can make the client emit without an application driving it), and the server's DATA for that stream was already in flight. OVERVIEW.md section 2.5 decision 3: a frame for a stream that was open-in-the-sender's-view and is now gone on the receiver's side is a benign race -- discard, count wsmixer_stale_frames_total, log at debug. It is NOT an error, matching late_data_after_reset.json's server-role counterpart.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" }, "max_streams": 1 } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 1, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "recv": { "type": "OPEN", "stream_id": 1 } },
+    { "expect": { "stream_state": "open" } },
+    { "recv": { "type": "OPEN", "stream_id": 3 } },
+    { "send": { "type": "RESET", "stream_id": 3, "code": 8, "message": "max_streams=1 exceeded by stream 3" } },
+    { "expect": { "stream_reset_code": "STREAM_LIMIT", "stream_state": "closed" } },
+    { "recv": { "type": "DATA", "stream_id": 3, "payload_hex": "746f6f206c617465" } },
+    { "expect": { "stream_state": "closed", "error_code": null } }
+  ]
+}

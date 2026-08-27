@@ -1,0 +1,9 @@
+{
+  "description": "app{} round trip in both directions, independent of any stream.",
+  "steps": [
+    { "actor": "server", "cmd": { "cmd": "send_app", "body": { "hello": "from-server" } } },
+    { "actor": "client", "await": { "event": "app", "body": { "hello": "from-server" } } },
+    { "actor": "client", "cmd": { "cmd": "send_app", "body": { "hello": "from-client" } } },
+    { "actor": "server", "await": { "event": "app", "body": { "hello": "from-client" } } }
+  ]
+}

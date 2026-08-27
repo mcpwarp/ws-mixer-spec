@@ -1,0 +1,8 @@
+{
+  "description": "Client-initiated graceful close with no streams open: drain{client_requested}, then a clean NO_ERROR close on both sides.",
+  "steps": [
+    { "actor": "client", "cmd": { "cmd": "close", "code": 0, "message": "conformance graceful_close" } },
+    { "actor": "client", "await": { "event": "disconnected" } },
+    { "actor": "server", "await": { "event": "disconnected" } }
+  ]
+}

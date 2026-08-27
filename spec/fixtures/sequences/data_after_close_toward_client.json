@@ -1,0 +1,13 @@
+{
+  "description": "Server sends CLOSE (half-closing its own write side), then keeps sending DATA anyway -- illegal per OVERVIEW.md section 2.5's receiving table, row 'half-closed (remote)': 'recv DATA -> RESET(STREAM_CLOSED)'. The RESET is fully autonomous: the client's own dispatch detects the violation and resets the stream on its own, with no scripted `send` step and no application action involved -- deliberately, so the assertion depends on the SDK's/adapter's own observation of the reset (a Stream's own recorded error for the Go/JS unit harnesses; the adapter's `stream_reset` event for the conformance runner), not on a runner-issued command or a wire-level fallback that would mask a suppressed event. Mutation-testing gap: a Go CloseWrite implementation that still lets a stray DATA reach the wire after CLOSE (mutation (b), see go/wsmixer/stream_test.go's TestStreamWriteAfterCloseWriteFails), or a client adapter that suppresses the resulting stream_reset event (mutation (d)), would both pass a fixture that only ever asserted stream_state:open -- this one exercises the actual half-closed(remote) violation end to end. No trailing `error_code: null` assertion here (unlike its siblings): the conformance runner's liveness probe for that assertion pings-and-expects-pong in --strict mode, which would collide with this stream's own already-in-flight, never-explicitly-consumed RESET frame sitting on the wire -- a real runner limitation for an autonomous stream-level RESET with no scripted `send` step, not a fixture compromise; stream_reset_code/stream_state already establish the connection stayed up (a connection-fatal error would leave no live stream to observe either field on).",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "recv": { "type": "OPEN", "stream_id": 1 } },
+    { "recv": { "type": "CLOSE", "stream_id": 1 } },
+    { "expect": { "stream_state": "half_closed_remote" } },
+    { "recv": { "type": "DATA", "stream_id": 1, "payload_length": 16 } },
+    { "expect": { "stream_reset_code": "STREAM_CLOSED", "stream_state": "closed" } }
+  ]
+}

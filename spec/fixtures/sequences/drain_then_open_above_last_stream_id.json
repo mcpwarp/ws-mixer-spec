@@ -1,0 +1,12 @@
+{
+  "description": "Server drains with last_stream_id:3, then (mis)opens stream 5, which is above the announced boundary. OVERVIEW.md section 2.7 Drain: 'A client receiving OPEN with id > last_stream_id after drain MUST treat it as connection PROTOCOL_ERROR (4001) -- strict, not a stream-scoped REFUSED_STREAM, because it means the server has violated the boundary it already promised.' See also section 2.9 Drain and the decision log's 2026-08-27 entry -- only the server opens streams, so only the client is ever in a position to detect this.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "recv": { "t": "drain", "reason": "rollout", "last_stream_id": 3, "deadline_ms": 5000 } },
+    { "expect": { "error_code": null } },
+    { "recv": { "type": "OPEN", "stream_id": 5 } },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

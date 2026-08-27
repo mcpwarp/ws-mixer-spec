@@ -1,0 +1,10 @@
+{
+  "description": "From the CLIENT's perspective: the server sends a WINDOW frame on stream 0 (the control channel). OVERVIEW.md section 2.3 payload table and section 2.8's kill table: 'OPEN / CLOSE / RESET / WINDOW on stream 0' -> connection PROTOCOL_ERROR. Caught at frame-decode time, before any control-channel dispatch, so the increment's value is irrelevant.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "recv": { "type": "WINDOW", "stream_id": 0, "increment": 4096 } },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

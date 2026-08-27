@@ -1,0 +1,10 @@
+{
+  "description": "Mirror of data_for_never_opened_stream.json from the CLIENT's perspective: DATA arrives for a stream id greater than highest_opened -- it was never opened, so this cannot be a benign race. OVERVIEW.md section 2.5 receiving table: connection PROTOCOL_ERROR.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "recv": { "type": "DATA", "stream_id": 999, "payload_hex": "00" } },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

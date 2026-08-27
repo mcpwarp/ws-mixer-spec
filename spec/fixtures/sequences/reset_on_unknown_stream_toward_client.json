@@ -1,0 +1,10 @@
+{
+  "description": "RESET arrives for a stream id greater than highest_opened -- it was never opened, so this cannot be a benign race. OVERVIEW.md section 2.5 receiving table, row 'id > highest_opened (never opened)': every frame type including RESET -> conn PROTOCOL_ERROR. Companion to data_for_never_opened_stream_toward_client.json (same row, different frame type) and to reset_on_closed_stream_toward_client.json (same frame type, the other row of the table -- id <= highest_opened with no live stream, which is benign).",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "recv": { "type": "RESET", "stream_id": 999, "code": 7, "message": "cancelled" } },
+    { "expect": { "error_code": "PROTOCOL_ERROR", "close_code": 4001 } }
+  ]
+}

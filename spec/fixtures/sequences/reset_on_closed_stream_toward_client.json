@@ -1,0 +1,14 @@
+{
+  "description": "A stream is opened and then RESET (fully closing and retiring it, per OVERVIEW.md section 2.5's state machine: 'Fully closed ... both ends then free the buffer, drop the table entry, stop tracking credit, and retire the id forever'). A second RESET for that same, now-retired id then arrives. OVERVIEW.md section 2.5 receiving table, row 'id <= highest_opened, no live stream': RESET -> discard + count + debug log, NOT an error -- this is decision 3's benign race (the peer's frames were already in flight), distinct from reset_on_unknown_stream_toward_client.json's never-opened id.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
+    { "recv": { "type": "OPEN", "stream_id": 1 } },
+    { "expect": { "stream_state": "open" } },
+    { "recv": { "type": "RESET", "stream_id": 1, "code": 7, "message": "cancelled" } },
+    { "expect": { "stream_state": "closed", "error_code": null, "stream_reset_code": "CANCEL" } },
+    { "recv": { "type": "RESET", "stream_id": 1, "code": 7, "message": "cancelled (late duplicate)" } },
+    { "expect": { "stream_state": "closed", "error_code": null } }
+  ]
+}

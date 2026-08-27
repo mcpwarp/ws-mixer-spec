@@ -1,0 +1,12 @@
+{
+  "description": "Mirror of unknown_capability_tolerated.json from the CLIENT's perspective: welcome carries a capability string the client has never heard of. OVERVIEW.md section 2.7: capability negotiation is additive and forward-compatible -- an unrecognized capability token is not a validation failure. Followed by one full ping/pong liveness round trip (server-initiated, since both sides ping independently per section 2.9) to demonstrate the connection is genuinely healthy afterward, not merely un-closed.",
+  "role": "client",
+  "steps": [
+    { "send": { "t": "hello", "v": 1, "token": "eyJhbGciOi.abc", "agent": { "sdk": "ws-mixer-js", "sdk_version": "0.3.1" } } },
+    { "recv": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000, "capabilities": ["future.capability.v9"] } },
+    { "expect": { "error_code": null } },
+    { "recv": { "t": "ping", "id": 0, "ts": 1756137600000 } },
+    { "send": { "t": "pong", "id": 0, "ts": 1756137600000 } },
+    { "expect": { "error_code": null } }
+  ]
+}
