@@ -593,8 +593,9 @@ over-designed and should be cut.
 
 ## 3. Go server package
 
-**Module** `github.com/mcpwarp/ws-mixer/go`, **package `wsmixer`**. One package; no `internal/` split until
-there is something to hide.
+**Module** `github.com/mcpwarp/ws-mixer/go`, **package `wsmixer`** at `github.com/mcpwarp/ws-mixer/go/wsmixer`
+(sources live under `go/wsmixer/`; `go/` itself holds only `go.mod`, `go.sum` and `README.md`). One package;
+no `internal/` split until there is something to hide.
 
 ### 3.1 WebSocket library: `coder/websocket`
 
@@ -640,7 +641,7 @@ type Stream struct{ /* … */ }
 func (s *Stream) Read(p []byte) (int, error)
 func (s *Stream) Write(p []byte) (int, error)
 func (s *Stream) CloseWrite() error                 // sends CLOSE; peer reads EOF
-func (s *Stream) Close() error                      // CloseWrite + stop reading
+func (s *Stream) Close() error                      // CloseWrite; if the peer may still send, also Reset(CANCEL) so it does not stall on a window nobody drains
 func (s *Stream) Reset(code uint32, msg string) error
 func (s *Stream) ID() uint32
 ```
@@ -648,6 +649,11 @@ func (s *Stream) ID() uint32
 `OpenStream` returns something `io.ReadWriteCloser`-shaped plus `CloseWrite()`, so the mcpwarp side can hand
 it straight to `httputil`-style copying. `Read` returns `io.EOF` after the peer's CLOSE and a `*wsmixer.Error`
 after a RESET — the distinction the layer above needs.
+
+`OnStream`, `OnApp`, and `OnDrain` all fire from one shared, connection-owned delivery goroutine, strictly in
+the order their frames arrived on the wire, decoupled from the read loop so a slow callback never stalls
+frame parsing — but also never runs concurrently with itself or the other two, so each must hand off to its
+own goroutine for anything that blocks.
 
 ### 3.3 Illustrative usage
 
@@ -875,17 +881,24 @@ ws-mixer/
     research/                    the three passes
   spec/
     ws-mixer-v1.md               the normative wire spec (§2 of this doc, promoted and frozen)
+    README.md                    spec artifacts guide: layout, schema notes, validation strategy
     control.schema.json          JSON Schema draft 2020-12, strict (additionalProperties:false on leaves)
     control.relaxed.schema.json  generated: strict minus additionalProperties. Never hand-edited
     fixtures/
+      COUNTS.json                    checked-in floor for the total fixture count
       control/<type>/valid/*.json    one directory per t: hello, welcome, ping, pong, drain, error, app
       control/<type>/invalid/*.json
       control/envelope/invalid/*.json  unknown t, non-object, missing t, wrong types, malformed JSON
       frames/                   hex-encoded frame corpus: valid headers, oversize, bad reserved bits,
                                 WINDOW len != 4, RESET len < 4, high-bit stream id
       sequences/                named connection transcripts + expected terminal state
-  go/                           module github.com/mcpwarp/ws-mixer/go, package wsmixer
-    conn.go stream.go frame.go control.go drain.go events.go prometheus/
+    tools/
+      check-fixtures.mjs        dependency-free conformance check for spec/fixtures against both schemas
+      gen-relaxed-schema.mjs    (re)generates control.relaxed.schema.json from control.schema.json
+  go/                           module github.com/mcpwarp/ws-mixer/go
+    go.mod go.sum README.md
+    wsmixer/                    package wsmixer
+      conn.go stream.go frame.go control.go drain.go events.go prometheus/
   js/                           @mcpwarp/ws-mixer
     src/ test/
   conformance/
@@ -906,13 +919,15 @@ ws-mixer/
   `santhosh-tekuri/jsonschema/v6`; Python: `jsonschema.Draft202012Validator`; TS: `ajv/dist/2020` — never the
   bare `ajv` import, which is draft-07 and fails open) **and its own hand-written validator, and asserts they
   agree.** That is where the schema earns its keep: as the cross-SDK arbiter.
-- **Fixture discipline**: assert on `valid` always, on `instanceLocation` + `keyword` where it matters,
-  **never on error text**. Every message type needs ≥1 valid and ≥3 invalid cases; CI fails if a type has
-  zero or if the total count drops.
+- **Fixture discipline**: every control fixture asserts on both `schema_valid` (against the strict schema)
+  and `wire_valid` (against the relaxed schema) — never a single `valid` field, since a fixture can be
+  schema-invalid (e.g. an unknown field) while still being wire-valid — plus on `instanceLocation` +
+  `keyword` where it matters, **never on error text**. Every message type needs ≥1 schema_valid and ≥3
+  invalid cases; CI fails if a type has zero or if the total count drops.
 - **`sequences/` is where the hard bugs are caught.** Schema fixtures catch malformed messages; only
   transcripts catch a wrong state machine (`hello_timeout`, `two_hellos`, `frame_before_welcome`,
-  `data_over_credit`, `frame_for_never_opened_id`, `frame_for_dead_stream`, `window_after_close`,
-  `drain_with_inflight`, `pong_for_unsent_id`, `app_before_welcome`).
+  `credit_violation`, `data_for_never_opened_stream`, `late_data_after_reset`, `window_after_close`,
+  `drain_with_inflight_timeout`, `pong_for_unsent_id`, `app_before_welcome`).
 
 **A Python SDK plugs in later with zero spec changes**: it consumes the same `spec/fixtures/` and
 `spec/sequences/`, and joins `conformance/runner` as a third participant (Go server ↔ Python client, and

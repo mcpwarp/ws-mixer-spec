@@ -452,10 +452,25 @@ for (const file of listJsonFiles(sequencesDir)) {
     continue;
   }
 
+  let lastErrorCode = null;
+  let lastResetCode = null;
+
   fixture.steps.forEach((step, i) => {
     const stepPath = `${rel}#steps[${i}]`;
     const presentKeys = ["recv", "send", "wait_ms", "expect"].filter((k) => k in step);
     check(presentKeys.length === 1, `${stepPath}: must have exactly one of recv|send|wait_ms|expect, has [${presentKeys.join(", ")}]`);
+
+    // finding: a step carrying a numeric error.code or RESET code must agree with
+    // the named error_code/stream_reset_code a later expect step asserts on.
+    const msg = step.recv || step.send;
+    if (msg && msg.t === "error" && typeof msg.code === "number") lastErrorCode = msg.code;
+    if (msg && msg.type === "RESET" && typeof msg.code === "number") lastResetCode = msg.code;
+    if (step.expect && step.expect.error_code && lastErrorCode !== null) {
+      check(ERROR_CODES[step.expect.error_code] === lastErrorCode, `${stepPath}.expect.error_code: "${step.expect.error_code}" (${ERROR_CODES[step.expect.error_code]}) does not match the numeric error.code ${lastErrorCode} seen earlier in this sequence`);
+    }
+    if (step.expect && step.expect.stream_reset_code && lastResetCode !== null) {
+      check(ERROR_CODES[step.expect.stream_reset_code] === lastResetCode, `${stepPath}.expect.stream_reset_code: "${step.expect.stream_reset_code}" (${ERROR_CODES[step.expect.stream_reset_code]}) does not match the numeric RESET code ${lastResetCode} seen earlier in this sequence`);
+    }
 
     for (const kind of ["recv", "send"]) {
       const payload = step[kind];

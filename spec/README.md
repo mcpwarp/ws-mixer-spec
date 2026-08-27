@@ -214,6 +214,9 @@ state (e.g. `send_window`) may appear; a harness should assert only the keys pre
 possible field. `error_code`/`close_code`/`stream_state` explicitly set to `null` asserts the *absence* of an
 error/close — i.e. the sequence must still be alive and healthy at that point.
 
+Sequence ping ids are the sender's own counter, which starts at 0: fixtures scripting a `ping`/`pong`
+exchange must use 0-based ids to match what a real implementation actually sends.
+
 `error_code` is for a **connection-level** `error{code}` message (OVERVIEW.md section 2.7/2.8) — it is
 always paired with a `close_code`, and `check-fixtures.mjs` asserts `close_code == 4000 + <the error_code's
 numeric value>` (or `1000` for `NO_ERROR`), per OVERVIEW.md section 2.8's mechanical rule. `stream_reset_code`

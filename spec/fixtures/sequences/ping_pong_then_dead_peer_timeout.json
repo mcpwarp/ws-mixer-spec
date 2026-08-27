@@ -2,9 +2,9 @@
   "description": "One successful ping/pong round trip, then the peer stops answering and the keepalive watchdog fires. OVERVIEW.md section 2.9 Keepalive: ping_interval 30000ms, ping_timeout 90000ms, measured from last_pong_received. The watchdog fires once elapsed time since last_pong_received strictly exceeds ping_timeout (elapsed > ping_timeout, not >=), i.e. at 90001ms of silence, not 90000ms.",
   "role": "server",
   "steps": [
-    { "send": { "t": "ping", "id": 1, "ts": 1756137600000 } },
-    { "recv": { "t": "pong", "id": 1, "ts": 1756137600000 } },
-    { "send": { "t": "ping", "id": 2, "ts": 1756137630000 } },
+    { "send": { "t": "ping", "id": 0, "ts": 1756137600000 } },
+    { "recv": { "t": "pong", "id": 0, "ts": 1756137600000 } },
+    { "send": { "t": "ping", "id": 1, "ts": 1756137630000 } },
     { "wait_ms": 90001 },
     { "send": { "t": "error", "code": 13, "message": "no pong received for 90001ms" } },
     { "expect": { "error_code": "KEEPALIVE_TIMEOUT", "close_code": 4013 } }

@@ -3,8 +3,8 @@
   "role": "server",
   "steps": [
     { "send": { "t": "welcome", "v": 1, "session": "01J8Z2K9QF3M4N5P6R7S8T9V0W", "window": 262144, "max_streams": 64, "ping_interval": 30000, "ping_timeout": 90000 } },
-    { "send": { "t": "ping", "id": 1, "ts": 1756137600000 } },
-    { "recv": { "t": "pong", "id": 1, "ts": 1756137600000 } },
+    { "send": { "t": "ping", "id": 0, "ts": 1756137600000 } },
+    { "recv": { "t": "pong", "id": 0, "ts": 1756137600000 } },
     { "expect": { "error_code": null } },
     { "recv": { "t": "pong", "id": 99, "ts": 1756137600500 } },
     { "send": { "t": "error", "code": 1, "message": "pong for id 99 was never sent" } },
