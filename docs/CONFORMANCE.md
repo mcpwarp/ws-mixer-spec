@@ -61,13 +61,20 @@ The adapter emits `ready` once at startup and `ack{seq}` when a command's local 
 | `connected` | `welcome` (verbatim object), `session` | Client got `welcome` for the first time on this process. |
 | `reconnected` | same payload shape as `connected` (`welcome`, `session`) | The client's own SDK-internal reconnect loop redialed and got a fresh `welcome` after an earlier disconnect (only possible when `connect.reconnect.enabled:true`, §1.1). Never emitted for the initial connect. |
 | `stream_opened` | `id` | Locally opened (server) or `OPEN` received (client). |
-| `data` | `id`, `data_b64` | Bytes delivered to the application. |
-| `stream_closed` | `id`, `direction` (`read`\|`write`\|`both`) | `CLOSE` received / sent, EOF surfaced. `read`/`write` fire the moment that one half closes, same as before; `both` is an *additional* event emitted right after whichever of the two fires second, once both halves of a stream are closed. Consumers that only care about the wire-level half-close keep matching `read`/`write` unchanged; a `both` event is simply an extra one they don't have to await. |
-| `stream_reset` | `id`, `code`, `name`, `message` | `RESET` received or emitted autonomously by the SDK. |
+| `data` | `id`, `data_b64`, `t_ms` | Bytes delivered to the application. |
+| `stream_closed` | `id`, `direction` (`read`\|`write`\|`both`), `t_ms` | `CLOSE` received / sent, EOF surfaced. `read`/`write` fire the moment that one half closes, same as before; `both` is an *additional* event emitted right after whichever of the two fires second, once both halves of a stream are closed. Consumers that only care about the wire-level half-close keep matching `read`/`write` unchanged; a `both` event is simply an extra one they don't have to await. |
+| `stream_reset` | `id`, `code`, `name`, `message`, `t_ms` | `RESET` received or emitted autonomously by the SDK. |
 | `app` | `body` | `app` received. |
 | `drain` | `reason`, `last_stream_id`, `deadline_ms` | `drain` received. |
 | `disconnected` | `ws_code`, `error_code`, `error_name`, `message`, `fatal` | Connection ended, for any reason. Always emitted exactly once per connection (a reconnect that follows starts a new "connection" for this purpose — a fresh `connected`/`reconnected` up to the next `disconnected`). |
 | `error` | `message`, `seq?`, `unsupported?`, `ok?` | A command failed, or the adapter itself broke. Never used for protocol errors — those are `disconnected`. A role-inapplicable command (§1.3, e.g. the JS adapter's `listen`/`open_stream`) replies `{"event":"error","seq":..,"ok":false,"unsupported":true,"error":"unsupported","message":"..."}`; the runner's `isUnsupported` check (`conformance/runner/adapter/adapter.go`) turns that into a SKIP rather than a FAIL. |
+
+`t_ms` is an integer: milliseconds since the adapter process started, monotonic (not wall-clock, not
+comparable across processes). It exists for external tooling that wants to eyeball relative timing of a
+byte stream without parsing adapter stderr; the runner itself ignores it. This protocol is versioned here
+(this document); adding a field like `t_ms` is an additive-only change and does not bump anything — see
+`conformance/README.md`'s "Using the Go adapter as a fake tunnel" section for the stability promise this
+protocol makes to external consumers.
 
 An adapter is ~250–400 lines. It is a thin shell over the SDK's public API plus the one test-only timing
 hook; it contains **no protocol logic of its own** — if an adapter needs to reimplement part of the spec to

@@ -247,6 +247,101 @@ conformance/
     step-driving.json      the section 3.3 sidecar
 ```
 
+## Using the Go adapter as a fake tunnel for external e2e tests
+
+The Go adapter (`conformance/adapters/go/main.go`) is a thin shell over `go/wsmixer` with no
+protocol logic of its own (docs/CONFORMANCE.md section 1). Because it just relays a real
+`go/wsmixer` server over JSON-lines commands/events on stdin/stdout, it's also useful standalone,
+outside the runner, as a scriptable fake tunnel endpoint for external end-to-end tests that want a
+byte-exact request/response over one stream without standing up a full ws-mixer deployment.
+
+Build it (the `conformance` build tag is required — it's what makes `wsmixer.AllowSubfloorTiming`
+available; see `main.go`'s package comment):
+
+```sh
+$HOME/.goenv/versions/1.24.4/bin/go build -tags conformance -o /tmp/go-adapter ./conformance/adapters/go
+```
+
+Spawn it and drive it by writing one JSON object per line to its stdin and reading one JSON object
+per line back from its stdout. Sequence to send a byte-exact request on one stream and collect the
+response chunks:
+
+1. `listen` → wait for `listening`
+```json
+{"cmd":"listen","seq":1}
+```
+```json
+{"event":"ack","seq":1}
+```
+```json
+{"event":"listening","seq":1,"url":"ws://127.0.0.1:54321/v1/tunnel"}
+```
+2. (an external client connects to that `url`) → `connected`
+```json
+{"event":"connected","session":"...","welcome":{"session":"..."}}
+```
+3. `open_stream`
+```json
+{"cmd":"open_stream","seq":2}
+```
+```json
+{"event":"ack","seq":2}
+```
+```json
+{"event":"stream_opened","seq":2,"id":1}
+```
+4. `write` the request bytes (base64), then `close_write` to signal the request is complete
+```json
+{"cmd":"write","seq":3,"id":1,"data_b64":"cmVxdWVzdCBib2R5"}
+```
+```json
+{"event":"ack","seq":3}
+```
+```json
+{"cmd":"close_write","seq":4,"id":1}
+```
+```json
+{"event":"ack","seq":4}
+```
+```json
+{"event":"stream_closed","id":1,"direction":"write","t_ms":12}
+```
+5. Observe `data` events until `stream_closed{direction:"read"}` (or `"both"`, if this side's
+   write side was already closed) — concatenate `data_b64` in arrival order for the byte-exact
+   response
+```json
+{"event":"data","id":1,"data_b64":"cmVzcG9uc2UgY2h1bms=","t_ms":47}
+```
+```json
+{"event":"stream_closed","id":1,"direction":"read","t_ms":48}
+```
+```json
+{"event":"stream_closed","id":1,"direction":"both","t_ms":48}
+```
+6. Shut down cleanly: `drain` (optional, only if you want to stop accepting new streams first)
+   then `close`
+```json
+{"cmd":"drain","seq":5,"reason":"client_requested"}
+```
+```json
+{"event":"ack","seq":5}
+```
+```json
+{"cmd":"close","seq":6,"code":0,"message":""}
+```
+```json
+{"event":"ack","seq":6}
+```
+
+If a `stream_reset` arrives instead of a clean `stream_closed`, treat the request as failed —
+`code`/`name`/`message` identify why (docs/CONFORMANCE.md section 1.2).
+
+**Stability promise:** this is the same protocol the runner speaks, versioned in
+`docs/CONFORMANCE.md` (section 1.1's command table, section 1.2's event table). Changes to it are
+additive only — new optional fields (like `t_ms`, added for this use case) or new event/command
+kinds, never a renamed or removed field an external consumer might already depend on. Anything
+already documented there is safe to build against.
+
 ## Adding a Python adapter
 
 Follow `docs/CONFORMANCE.md` section 6's checklist verbatim — nothing here changes it. Two
@@ -264,6 +359,10 @@ concrete pointers from having actually built the other two adapters:
 - Smoke it exactly as section 6 step 7 says: `./conformance/runner --sdk python --mode pair
   --fixture happy_roundtrip -v` (once `happy_roundtrip` — or an equivalent — exists as a pair
   scenario, which it does here) before trying the full fixture matrix.
+- Stamp `t_ms` (integer, milliseconds since your adapter process started, monotonic) on every
+  `data`, `stream_closed`, and `stream_reset` event, matching the Go and JS adapters
+  (`docs/CONFORMANCE.md` section 1.2). It's additive — the runner ignores unknown fields — but
+  keep it for consistency across SDKs.
 - `conformance/COUNTS.json` (docs/CONFORMANCE.md section 5's CI pass-count floor) exists and is
   enforced on every unfiltered run; bump its `js-client`/`go-client`/etc. floors once Python starts
   passing cells, per its own `checkCounts` doc comment in `main.go`.
