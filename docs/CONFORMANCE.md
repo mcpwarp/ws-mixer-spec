@@ -58,7 +58,7 @@ The adapter emits `ready` once at startup and `ack{seq}` when a command's local 
 | `ready` | `sdk`, `sdk_version`, `roles` | Process start. `roles` is `["server"]`, `["client"]` or both. |
 | `ack` | `seq` | The command with that `seq` finished locally. |
 | `listening` | `url` | After `listen`. |
-| `connected` | `welcome` (verbatim object), `session` | Client got `welcome` for the first time on this process. |
+| `connected` | client role: `welcome` (verbatim object), `session`. Server role: `role:"server"`, `session`, `hello` (`{agent, meta?}` — the connecting client's `hello.agent`/`hello.meta`, verbatim; `meta` omitted when the client sent none) | Client role: got `welcome` for the first time on this process. Server role: a client's handshake completed (`OnConn`/the SDK's equivalent, fired once, after `hello` is accepted) — the server side never sees its own `welcome`, only the peer's `hello`, so it reports that instead. |
 | `reconnected` | same payload shape as `connected` (`welcome`, `session`) | The client's own SDK-internal reconnect loop redialed and got a fresh `welcome` after an earlier disconnect (only possible when `connect.reconnect.enabled:true`, §1.1). Never emitted for the initial connect. |
 | `stream_opened` | `id` | Locally opened (server) or `OPEN` received (client). |
 | `data` | `id`, `data_b64`, `t_ms` | Bytes delivered to the application. |

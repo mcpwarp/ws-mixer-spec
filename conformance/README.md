@@ -203,6 +203,56 @@ re-established).
   match the `hello.token` it's about to send, because `go/wsmixer`'s built-in
   `performServerHandshake` rejects that mismatch before any `Authenticate` hook even runs — for
   every other fixture, header and `hello.token` match.
+- **Server-role `connected` event, added.** `OnConn` used to just wire up `OnApp`/`OnDrain`/the
+  disconnect watcher and never told the runner (or an external fake-tunnel consumer) that a
+  connection had actually been accepted. The server role is Go-only (the JS SDK has no server —
+  see above), so this is a Go adapter change only: its `Authenticate` hook now stashes the
+  connecting client's `*Hello` (the only place a server-role adapter ever sees `hello.agent`/
+  `hello.meta` — `go/wsmixer`'s `Conn` exposes neither on the server side), and `OnConn` emits
+  `{"event":"connected","role":"server","session":...,"hello":{"agent":...,"meta":...}}` right
+  after (docs/CONFORMANCE.md section 1.2's event table). This is additive: no existing fixture or
+  scenario asserts on `connected.role`/`connected.hello`, so nothing that matched the old,
+  event-less `OnConn` behavior breaks.
+- **`write`/`close_write` are serialized per stream id; `reset` runs out-of-band.** `write` acks
+  asynchronously (its `Stream.Write`/`stream.write()` callback fires once the chunk actually
+  reaches the wire) while `close_write` used to run synchronously as soon as its command line was
+  read. A `close_write` issued before an in-flight `write`'s ack could therefore send `CLOSE`
+  before that write's `DATA` frame — `go/wsmixer`'s writer loop drains its control-priority queue
+  (which `CLOSE`/`RESET` use) entirely before considering any `DATA` (`sched.go`'s `writerLoop`:
+  "Control frames jump the DATA rotation entirely"), and `nextChunk` refuses to write `DATA` once a
+  stream has sent `CLOSE`/`RESET` — truncating the write. Both adapters now run `write`/
+  `close_write` for a given stream id through a per-stream FIFO queue, bounded at 64 entries (Go: a
+  worker goroutine fed by a channel, `streamWorkers` in `main.go`; JS: a small queue object plus a
+  pump loop, `streamQueues`/`enqueueStreamOp` in `adapter.mjs`), so commands for one stream take
+  effect in the order the runner sent them regardless of ack timing; a queue that fills up behind a
+  stalled op error-acks the new command with `queue_full` instead of blocking the stdin-reading
+  loop. Acks are unchanged in shape and still fire from inside the command that produced them.
+  `reset` deliberately does **not** go through this queue: OVERVIEW.md section 2.5 makes RESET
+  abortive — it must discard buffered data and unblock writers immediately, not wait behind a
+  `write` that is itself blocked on exhausted send credit. Both adapters cancel/abort the stalled
+  queue (Go: the worker's per-stream `context.WithCancel`, passed to `Stream.WriteContext`; JS:
+  marking the queue aborted, relying on `stream.reset()`'s own `destroy()` to settle a write
+  already in flight) before calling `Reset`/`reset()`, then drain whatever was still queued with an
+  error ack rather than letting it run against an already-reset stream. Regression coverage:
+  `conformance/adapters/go/race_test.go`'s `TestWriteCloseWriteOrderingRace` sends three `write`s
+  immediately followed by `close_write`, none of their acks awaited, and asserts the peer receives
+  every byte in order followed by a clean EOF — reproducibly fails (truncated to zero bytes) against
+  the pre-fix code and passes under `-race`; `TestResetUnblocksBlockedWrite` exhausts a stream's
+  send window (with the peer reading nothing until after `reset` fires, so no credit is ever
+  returned early) so a queued `write` blocks, then issues `reset` and asserts it returns promptly,
+  that the blocked write's own ack is an error ack reflecting cancellation arriving at or before
+  reset's own ack, that the peer observes the RESET, that the stream's FIFO worker is torn down,
+  and that no goroutine leaks;
+  `TestNoWorkerLeakAfterManyOpenCloseCycles` runs 50 open/write/close cycles and asserts no
+  per-stream worker goroutine or bookkeeping entry survives past each stream's own teardown.
+  The Go adapter's cancel-then-wait is itself bounded: `resetStream` (`go/main.go`) waits up to
+  `resetWorkerDrainBudget` (500ms) for the in-flight job on the stream's command loop to notice
+  the cancellation and finish before `Stream.Reset` and the queue drain proceed. If that job
+  ignores its context and outlives the budget, reset proceeds anyway rather than blocking
+  indefinitely, and a job that was still queued behind it can end up scheduled before the drain
+  reaches it, observing an already-reset stream instead of a clean abort. This is a bounded,
+  accepted race, not a correctness bug — the alternative (an unbounded wait) would defeat RESET's
+  own promptness guarantee.
 
 ## SDK changes made
 
@@ -256,10 +306,13 @@ outside the runner, as a scriptable fake tunnel endpoint for external end-to-end
 byte-exact request/response over one stream without standing up a full ws-mixer deployment.
 
 Build it (the `conformance` build tag is required — it's what makes `wsmixer.AllowSubfloorTiming`
-available; see `main.go`'s package comment):
+available; see `main.go`'s package comment). `conformance/adapters/go` is its own Go module (its own
+`go.mod`, `replace`d onto `../../../go` — there is no root module at the repo root to build it
+against as a package path), so build from inside that directory. Requires Go 1.24+ (the module's own
+`go.mod` `go` directive):
 
 ```sh
-$HOME/.goenv/versions/1.24.4/bin/go build -tags conformance -o /tmp/go-adapter ./conformance/adapters/go
+cd conformance/adapters/go && go build -tags conformance -o /tmp/go-adapter .
 ```
 
 Spawn it and drive it by writing one JSON object per line to its stdin and reading one JSON object
@@ -276,10 +329,15 @@ response chunks:
 ```json
 {"event":"listening","seq":1,"url":"ws://127.0.0.1:54321/v1/tunnel"}
 ```
-2. (an external client connects to that `url`) → `connected`
+2. (an external client connects to that `url`) → `connected`, emitted once the SDK's handshake
+   completes (`OnConn`, after the client's `hello` has been accepted). A server-role `connected`
+   mirrors the client-role shape but reports `role:"server"` and the peer's `hello` (agent/meta)
+   instead of a `welcome` object — the server side never sees its own `welcome`, only the `hello`
+   the connecting client sent (docs/CONFORMANCE.md section 1.2):
 ```json
-{"event":"connected","session":"...","welcome":{"session":"..."}}
+{"event":"connected","role":"server","session":"...","hello":{"agent":{"sdk":"...","sdk_version":"..."},"meta":{...}}}
 ```
+   `hello.meta` is present only if the connecting client's `hello` carried one.
 3. `open_stream`
 ```json
 {"cmd":"open_stream","seq":2}
