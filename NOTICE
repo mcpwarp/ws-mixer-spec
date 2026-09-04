@@ -1,0 +1,12 @@
+ws-mixer-spec
+Copyright 2026 Anatoly Tarnavsky
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repo's conformance runner depends on:
+
+  - github.com/coder/websocket (ISC License) — https://github.com/coder/websocket
+
+The ISC License is compatible with both Apache-2.0 (used by the public ws-mixer repos) and AGPL-3.0
+(used by the private ws-mixer-server repo). The JS SDK's runtime dependency on `ws` (MIT License) is
+recorded in that repo's own NOTICE, for the same reason.

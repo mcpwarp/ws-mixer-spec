@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/mcpwarp/ws-mixer/conformance/runner/adapter"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/adapter"
 )
 
 // isUnsupportedSkip checks err for adapter.ErrUnsupported (the coordination

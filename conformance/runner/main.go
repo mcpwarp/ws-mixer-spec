@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mcpwarp/ws-mixer/conformance/runner/adapter"
-	"github.com/mcpwarp/ws-mixer/conformance/runner/driver"
-	"github.com/mcpwarp/ws-mixer/conformance/runner/fixture"
-	"github.com/mcpwarp/ws-mixer/conformance/runner/report"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/adapter"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/driver"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/fixture"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/report"
 )
 
 // sdkDef is one entry of the matrix: an SDK name, the roles it supports, and
@@ -40,13 +40,30 @@ func main() {
 		adapterOverride = flag.String("adapter", "", "name=path, overrides adapter discovery for one SDK (repeatable via comma: go=path1,js=path2)")
 		verbose         = flag.Bool("v", false, "print failure detail immediately")
 		strict          = flag.Bool("strict", true, "raw actor fails on any observed frame the current step doesn't expect, instead of skipping it (docs/CONFORMANCE.md section 2)")
+		specRootFlag    = flag.String("spec-root", "", "directory containing spec/fixtures and conformance/scenarios (default: walk up from cwd looking for spec/fixtures/sequences)")
+		adaptersDirFlag = flag.String("adapters-dir", "", "directory containing one subdirectory per SDK adapter (default: <spec-root>/conformance/adapters)")
+		countsFlag      = flag.String("counts", "", "path to the COUNTS.json floor file (default: <spec-root>/conformance/COUNTS.json)")
 	)
 	flag.Parse()
 
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "conformance runner:", err)
-		os.Exit(2)
+	repoRoot := *specRootFlag
+	if repoRoot == "" {
+		var err error
+		repoRoot, err = findRepoRoot()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "conformance runner:", err)
+			os.Exit(2)
+		}
+	}
+
+	adaptersDir := *adaptersDirFlag
+	if adaptersDir == "" {
+		adaptersDir = filepath.Join(repoRoot, "conformance", "adapters")
+	}
+
+	countsPath := *countsFlag
+	if countsPath == "" {
+		countsPath = filepath.Join(repoRoot, "conformance", "COUNTS.json")
 	}
 
 	workDir, err := os.MkdirTemp("", "ws-mixer-conformance-")
@@ -58,7 +75,7 @@ func main() {
 
 	overrides := parseAdapterOverrides(*adapterOverride)
 
-	sdks, err := discoverSDKs(repoRoot)
+	sdks, err := discoverSDKs(adaptersDir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "conformance runner: discovering adapters:", err)
 		os.Exit(2)
@@ -105,6 +122,20 @@ func main() {
 		sdks = filtered
 	}
 
+	// SDKs named explicitly on --sdk: a build/exec failure for one of these
+	// is fatal, since the caller asked for that SDK by name and a silent
+	// SKIP would make a targeted run look green for nothing. An SDK that
+	// wasn't asked for by name (discovered, or present only via --adapter)
+	// degrades to a SKIP instead (docs/CONFORMANCE.md section 3.5: "A
+	// missing or non-executable adapter is a listed SKIP ... never a hard
+	// failure").
+	explicitSDKs := map[string]bool{}
+	if *sdkFilter != "" {
+		for _, s := range strings.Split(*sdkFilter, ",") {
+			explicitSDKs[strings.TrimSpace(s)] = true
+		}
+	}
+
 	// Resolve (or record missing) each SDK's adapter binary once, up front.
 	type resolved struct {
 		def  sdkDef
@@ -118,19 +149,12 @@ func main() {
 			continue
 		}
 		if s.build == nil {
-			binaries = append(binaries, resolved{def: s, err: fmt.Errorf("no adapter directory at conformance/adapters/%s and no --adapter override", s.name)})
+			binaries = append(binaries, resolved{def: s, err: fmt.Errorf("no adapter directory at %s and no --adapter override", filepath.Join(adaptersDir, s.name))})
 			continue
 		}
 		p, err := s.build(repoRoot, workDir)
-		if err != nil && s.name == "go" {
-			// go is the reference implementation (the only server SDK), and
-			// a build failure here is a toolchain/config problem -- e.g. GO
-			// pointing at a go binary that doesn't exist -- not a "missing
-			// adapter" (docs/CONFORMANCE.md section 3.5's SKIP rule is for
-			// an SDK that was never expected to be present, like python
-			// today). Silently downgrading this to a SKIP on every go-* key
-			// would quietly zero out most of the matrix and still exit 0.
-			fmt.Fprintf(os.Stderr, "conformance runner: go adapter failed to build: %v\n", err)
+		if err != nil && explicitSDKs[s.name] {
+			fmt.Fprintf(os.Stderr, "conformance runner: %s adapter failed to build: %v\n", s.name, err)
 			os.Exit(1)
 		}
 		binaries = append(binaries, resolved{def: s, path: p, err: err})
@@ -238,7 +262,6 @@ func main() {
 	// false-fail on a deliberately narrow run or silently pass a floor it
 	// never actually exercised. Only check it on a genuinely unfiltered run.
 	if *sdkFilter == "" && *fixtureGlob == "*" && *mode == "all" {
-		countsPath := filepath.Join(repoRoot, "conformance", "COUNTS.json")
 		if err := checkCounts(countsPath, results); err != nil {
 			fmt.Fprintln(os.Stderr, "conformance runner:", err)
 			os.Exit(1)
@@ -268,16 +291,17 @@ func main() {
 	}
 }
 
-// discoverSDKs enumerates conformance/adapters/*/ (one subdirectory per
-// SDK, docs/CONFORMANCE.md section 5) instead of a hardcoded {go, js} list,
-// so a new adapter directory (e.g. conformance/adapters/python/) is picked
-// up with no runner change -- exactly what section 6's Python checklist
-// promises. Roles start as an optimistic {server, client} guess; main()
-// replaces it with the adapter's actual self-reported roles once it is
-// built (probeRoles).
-func discoverSDKs(repoRoot string) ([]sdkDef, error) {
-	dir := filepath.Join(repoRoot, "conformance", "adapters")
-	entries, err := os.ReadDir(dir)
+// discoverSDKs enumerates <adaptersDir>/*/ (one subdirectory per SDK,
+// docs/CONFORMANCE.md section 5) instead of a hardcoded {go, js} list, so a
+// new adapter directory (e.g. <adaptersDir>/python/) is picked up with no
+// runner change -- exactly what section 6's Python checklist promises. Every
+// adapter, without exception, is built the same way: an executable `run`
+// shim (buildGenericAdapter) -- this runner has no knowledge of any SDK's
+// toolchain; that lives with the SDK's own repo. Roles start as an
+// optimistic {server, client} guess; main() replaces it with the adapter's
+// actual self-reported roles once it is built (probeRoles).
+func discoverSDKs(adaptersDir string) ([]sdkDef, error) {
+	entries, err := os.ReadDir(adaptersDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -291,14 +315,7 @@ func discoverSDKs(repoRoot string) ([]sdkDef, error) {
 		}
 		name := e.Name()
 		def := sdkDef{name: name, roles: map[string]bool{"server": true, "client": true}}
-		switch name {
-		case "go":
-			def.build = buildGoAdapter
-		case "js":
-			def.build = buildJSAdapter
-		default:
-			def.build = buildGenericAdapter(name)
-		}
+		def.build = buildGenericAdapter(adaptersDir, name)
 		sdks = append(sdks, def)
 	}
 	sort.Slice(sdks, func(i, j int) bool { return sdks[i].name < sdks[j].name })

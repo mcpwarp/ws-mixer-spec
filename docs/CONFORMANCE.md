@@ -2,9 +2,9 @@
 
 Date: 2026-08-27 · Status: **design, before any code**
 
-Normative inputs: [`OVERVIEW.md`](./OVERVIEW.md) §2 (wire spec), §6 (layout), and
-[`../spec/README.md`](../spec/README.md) (fixture formats). Where this document and OVERVIEW.md
-disagree, OVERVIEW.md wins.
+Normative inputs: [`WIRE.md`](./WIRE.md) (wire spec), [`REPOS.md`](./REPOS.md) (repo layout), and
+[`../spec/README.md`](../spec/README.md) (fixture formats). Where this document and WIRE.md
+disagree, WIRE.md wins.
 
 ## 0. What this exists for
 
@@ -132,9 +132,11 @@ Neither choice touches the Python SDK: **the Python developer writes an adapter 
 runner.** That is the property that actually matters, and both candidates have it. Go wins on "one binary,
 zero setup".
 
-Layout note: `conformance/runner/go.mod` and `conformance/adapters/go/go.mod` are **separate modules** from
-`go/go.mod`, so the SDK module keeps its current dependency set and `go test ./...` inside `go/` stays fast
-and clean. The Go adapter uses a `replace` directive onto `../../../go`.
+Layout note (post-split): the runner is a package of this repo's own root module
+(`github.com/mcpwarp/ws-mixer-spec`, at `./conformance/runner`) — it ships no SDK adapters of its own. Each
+SDK's adapter lives in that SDK's own repo (e.g. `ws-mixer-go/conformance/adapter/`) with its own module,
+depending on that SDK's module directly rather than via a `replace` directive, and is built into an
+executable `run` shim the runner discovers under `--adapters-dir` (§5).
 
 ### 3.2 Matrix
 
@@ -270,52 +272,115 @@ Two invariants the runner checks on every fixture, whether or not the fixture sa
 
 ## 5. Repo layout, hooks, CI
 
+This repo (`ws-mixer-spec`) ships the runner and the fixtures/scenarios it replays. It ships **no SDK
+adapters** — adapters move with their SDKs, so each SDK's toolchain and version stay with that SDK's own
+repo instead of making this repo depend on every implementation. This repo's own layout:
+
 ```
-conformance/
-  README.md                 how to run it; how to add an adapter (the Python checklist, verbatim)
-  Makefile                  `make conformance`, `make conformance-go`, `make conformance-js`
-  runner/
-    go.mod                  own module; depends on coder/websocket only
-    main.go, build.go       flags, adapter discovery/build, matrix expansion, report writing
-    driver/                 fixture + pair driving logic, the §4 expect mapping (as built, this
-                             is a package of its own rather than top-level fixture.go/pair.go/
-                             expect.go -- see conformance/README.md's "Layout" section for the
-                             exact, as-built file list, which this diagram predates)
-    adapter/                spawn, JSON-lines codec, event bus, teardown
-    wire/, codes/, fixture/, report/   independent frame codec, error-code table, fixture loader, output
-    rawactor/               independent codec + WS peer, both roles
-  adapters/
-    go/    go.mod main.go   replace => ../../../go; built with `-tags conformance` (§3.4) so
-                             wsmixer.AllowSubfloorTiming (go/wsmixer/conformance_hooks.go) exists
-    js/    adapter.mjs      imports the built js/dist/index.js, not src/*.ts directly (a plain
-                             `node` process has no loader for a bare .ts import) -- a deviation
-                             from this section's original "no build step" plan, documented in
-                             conformance/README.md
-    python/                 (later)
-  scenarios/
-    *.json                  pair-mode scenarios, including `drain_reconnect` (§1.1/§1.2's
-                             `reconnect`/`reconnected` coordination contract)
-    step-driving.json       per-fixture step-driving overrides (§3.3)
+ws-mixer-spec/
+  go.mod go.sum              root module github.com/mcpwarp/ws-mixer-spec; the runner is a package
+                              of it (./conformance/runner), not a nested module
+  spec/
+    fixtures/, control.schema.json, tools/     the conformance oracle -- see spec/README.md
+  conformance/
+    COUNTS.json               unused here (this repo runs no adapters, so it checks no floor) --
+                               kept only as a documented format reference; each consumer repo ships
+                               its own (see below)
+    README.md                 how to run the runner; how to add an adapter (the Python checklist, verbatim)
+    runner/
+      main.go, build.go       flags, generic adapter discovery/build, matrix expansion, report writing
+      driver/                 fixture + pair driving logic, the §4 expect mapping
+      adapter/                spawn, JSON-lines codec, event bus, teardown
+      wire/, codes/, fixture/, report/   independent frame codec, error-code table, fixture loader, output
+      rawactor/               independent codec + WS peer, both roles
+    scenarios/
+      *.json                  pair-mode scenarios, including `drain_reconnect` (§1.1/§1.2's
+                               `reconnect`/`reconnected` coordination contract)
+      step-driving.json       per-fixture step-driving overrides (§3.3)
 ```
 
-| Hook | Command | Behaviour |
+**Adapters live in each SDK's own repo**, at `conformance/adapter/` (singular — this repo's
+`conformance/scenarios/` and `conformance/runner/` are the only survivors of the old plural
+`conformance/adapters/`):
+
+| Repo | Adapter path | Notes |
 |---|---|---|
-| Top level | `make conformance` (equivalently `cd conformance/runner && go run .`) | Builds the runner + every present adapter, runs the full matrix. The canonical entrypoint. `RUNNER_ARGS="..."` forwards flags, e.g. `make conformance RUNNER_ARGS="--sdk go --report build/conformance.xml"`. A prebuilt binary lives at `build/conformance-runner` once `make build-runner` (or `make conformance`, which builds it as a side effect) has run. |
-| Go SDK | `go test ./conformance/runner/... -run TestConformance` | A thin `TestMain` wrapper so `go test ./...` from the repo root includes it. |
-| JS SDK | `npm run test:conformance` | Spawns the prebuilt runner binary with `--sdk js`. Not part of `npm test` — `npm test` must stay fast and dependency-free. |
-| Python SDK | `make conformance RUNNER_ARGS="--sdk python"` | Same binary, `--sdk python`. |
+| `ws-mixer-go` | `conformance/adapter/` | built with `-tags conformance` so `wsmixer.AllowSubfloorTiming` (that repo's `conformance_hooks.go`) exists. Also produces `ws-mixer-server`'s adapter via a `ServerBackend` interface it exports (see that repo's own docs) — the public repo tests `go-client`/`go-server` via `wsmixer.AcceptConn`, the private server repo tests the real `Listener`. |
+| `ws-mixer-js` | `conformance/adapter/` | `adapter.mjs` imports the package's own built `dist/index.js`, not `src/*.ts` directly (a plain `node` process has no loader for a bare `.ts` import). |
+| `ws-mixer-server` | `cmd/conformance-adapter/` | wires the real `wsmixerserver.Listener`; this is the only adapter that proves the production HTTP/upgrade layer, not just the wire core. |
+| `ws-mixer-python` | (later) | not built yet |
 
-CI (`.github/workflows/conformance.yml`), one job, **required on every SDK's PRs from the first commit** —
-this is exactly the discipline OVERVIEW.md §6 says cloudevents/conformance lacked:
+### Finding fixtures and adapters from outside this repo
 
-1. `setup-go`, `setup-node`, `setup-python` (each `continue-on-error`, so a missing toolchain becomes SKIPs).
-2. `node spec/tools/check-fixtures.mjs` — the fixtures must be sane before anything replays them.
-3. `make conformance RUNNER_ARGS="--report build/conformance.xml"`.
+The runner has no notion of "the monorepo root" — every path it needs is a flag, each with a sane default
+for the common case of running it from inside this repo:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--spec-root <dir>` | walk up from cwd looking for `spec/fixtures/sequences` | root containing `spec/fixtures/` and `conformance/scenarios/` |
+| `--adapters-dir <dir>` | `<spec-root>/conformance/adapters` | directory containing one subdirectory per SDK adapter |
+| `--counts <path>` | `<spec-root>/conformance/COUNTS.json` | the pass-count floor file (§3.5) |
+| `--adapter name=path` | — | override discovery for one SDK with an already-built binary (repeatable, comma-separated) |
+
+An SDK repo's CI does not check out this repo's `conformance/adapters/` at all (it doesn't exist there
+anyway) — it fetches this repo at its pinned tag (`spec.pin`, see [`REPOS.md`](./REPOS.md)), builds its own
+adapter locally, and points the runner at both:
+
+```sh
+go run "$SPEC/conformance/runner" \
+  --spec-root "$SPEC" \
+  --adapter go=./build/go-adapter/run \
+  --sdk go --mode fixture \
+  --counts ./conformance/COUNTS.json \
+  --report ./build/conformance.xml
+```
+
+`--adapters-dir` exists for the case of *several* locally-built adapters in one directory (e.g.
+`ws-mixer-server`'s `conformance-matrix` job, which builds its own adapter **and** fetches + builds
+`ws-mixer-js`'s, see the CI table below) rather than naming each one individually with `--adapter`.
+
+Every adapter, without exception, is discovered and started the same way: a subdirectory of
+`--adapters-dir` containing an executable `run` shim (`docs/CONFORMANCE.md` §6, step 1). The runner has no
+per-language special case — it never invokes `go build` or `npm run build` itself; that is each SDK
+repo's own CI job, upstream of the runner invocation.
+
+A build/exec failure for an SDK named explicitly on `--sdk` is **fatal** (the caller asked for that SDK by
+name); the same failure for an SDK that was only discovered, or named only via `--adapter`, degrades to a
+**SKIP** row per fixture/scenario — never a hard failure, so a Python-only PR run doesn't fail because Go
+wasn't built.
+
+### What CI runs where
+
+| Repo | Job | What it runs | Fetches |
+|---|---|---|---|
+| **spec** (this repo) | `check-fixtures` | `node spec/tools/check-fixtures.mjs` (schema + `spec/fixtures/COUNTS.json` floor) | — |
+| | `runner-selftest` | `go test ./conformance/runner/...` (`wire/`, `adapter/` against `testdata/fakeadapter`, `main_test.go`; `e2e_test.go` skips cleanly with no adapter env vars set) | — |
+| | `schema-drift` | `node spec/tools/gen-relaxed-schema.mjs && git diff --exit-code` | — |
+| **go** | `test` | `go test ./...` + `-race` (`GOMAXPROCS=1`) | this repo @ `spec.pin` |
+| | `conformance` | build `cmd/conformance-adapter -tags conformance`; runner `--sdk go --mode fixture` | this repo @ `spec.pin` |
+| **js** | `test` | `npm run typecheck && npm test` | this repo @ `spec.pin`, `ws-mixer-go` @ `goserver.pin` |
+| | `conformance` | `npm run build`; runner `--sdk js --mode fixture` | this repo @ `spec.pin` |
+| **server** | `test` | `go test ./...` (HTTP-layer unit tests) | — |
+| | `conformance-matrix` | build its own adapter **and** fetch+build `ws-mixer-js`'s; runner `--mode all` (full fixture columns + the pair matrix); JUnit artifact | this repo @ `spec.pin`, `ws-mixer-js` @ pin |
+
+`COUNTS.json` floors are per-consumer, not shared: each of `ws-mixer-go`, `ws-mixer-js` and
+`ws-mixer-server` ships its own `conformance/COUNTS.json` with only the keys it actually exercises
+(`go-server`/`go-client` for the go repo; `js-server`/`js-client` for js; all six keys, including the pair
+matrix, for the server repo). This repo ships no floor of its own — it runs no adapters, so it has no
+pass-count keys to guard.
+
+CI in every consumer repo, one required job **from the first commit** — the discipline
+[`OVERVIEW.md`](./OVERVIEW.md) notes [cloudevents/conformance](https://github.com/cloudevents/conformance)
+lacked:
+
+1. Fetch this repo at `spec.pin` (a composite `fetch-spec` action reading the pin file).
+2. Build that repo's own adapter(s).
+3. Run the runner with `--report build/conformance.xml`.
 4. Upload the XML + all adapter stderr as artifacts, always.
 5. Fail the job on a non-zero exit. **A SKIP does not fail; a drop in the PASS count does** — the runner
-   writes `conformance/COUNTS.json` (a checked-in floor, same trick as `fixtures/COUNTS.json`) and fails if
-   the number of passing (SDK, fixture) cells falls below it. That is what stops "adapter got deleted, CI
-   went green".
+   checks the invoking repo's `--counts` file (a checked-in floor, same trick as `spec/fixtures/COUNTS.json`)
+   and fails if the number of passing (SDK, fixture) cells falls below it. That is what stops "adapter got
+   deleted, CI went green".
 
 ---
 
@@ -330,7 +395,7 @@ A day's work, in this order. Nothing outside the two files in step 1 may need to
 | 3 | Emit `ready` | `{"event":"ready","sdk":"ws-mixer-py","sdk_version":"0.1.0","roles":["client"]}`. Client-only is fine; server-role fixtures are then reported as SKIP for Python. |
 | 4 | Implement 11 commands | Client-only adapters must reply `{"event":"error","seq":..,"ok":false,"unsupported":true,"error":"unsupported","message":"..."}` (not a bare `error{"message":"unsupported command"}`) to `listen` and `open_stream` — the runner's `isUnsupported` check (`conformance/runner/adapter/adapter.go`) looks for `unsupported:true` or `error:"unsupported"` specifically, and only that shape is treated as a SKIP on a role-inapplicable command rather than a FAIL. `connect` gets the same `unsupported` reply if it's asked for `reconnect.enabled:true` and the SDK has no reconnect loop of its own (`conformance/adapters/go/main.go`'s `connect` handler is the reference: the Go SDK client has none, so it replies unsupported and the runner SKIPs `drain_reconnect`'s go-as-client cell instead of timing out). `shutdown` is real but never actually sent by this runner — every adapter is torn down by killing its whole process group (`conformance/runner/adapter/adapter.go`'s `Kill`), so an adapter only needs `shutdown` for manual/other-harness use, and must exit cleanly on SIGKILL of the group either way (no cleanup step that only `shutdown` would have triggered may be relied on). |
 | 5 | Implement 13 events | `seq` is echoed on `stream_opened` (server role only — client-role `stream_opened` from a received `OPEN` is autonomous and omits it, §1), `connected`, and `listening`, and each is emitted *after* the matching `ack` for the command that caused it (ack-then-event, never the reverse — `conformance/adapters/go/main.go`'s `listen`/`connect`/`open_stream` handlers are the reference order). `disconnected` must fire exactly once for every ending (clean, protocol error, transport drop), but its fields are conditional, not always-present: `error_code`/`error_name`/`ws_code` only when the SDK surfaces a proper protocol-level error object, a plain `message` otherwise (and `fatal` defaults `false` unless that error's code isn't `NO_ERROR`) — see `watchDisconnect` in the Go adapter. `drain` must include `message` when the underlying `DrainMsg` carries one, not just `reason`/`last_stream_id`/`deadline_ms`. `stream_closed` must carry `direction` (`read`\|`write`\|`both` — `both` is an extra event alongside whichever of `read`/`write` closed second, §1.2); `data` must fire only when bytes reach the application, since that is what credits the window; `reconnected` (same shape as `connected`) only if the adapter's SDK has its own reconnect loop and `connect.reconnect.enabled:true` was set — a client-only adapter with no reconnect support can leave it unimplemented and simply never emit it. |
-| 6 | Honour `set_options` | `time_scale` multiplies every internal duration; `floor_ms` (default 300) is the floor every such scaled duration is clamped to instead of a local hardcoded constant; `allow_subfloor_timing` disables the `ping_interval ≥ 5000` and `ping_timeout ≥ 2×` checks from OVERVIEW.md §2.10 step 2. |
+| 6 | Honour `set_options` | `time_scale` multiplies every internal duration; `floor_ms` (default 300) is the floor every such scaled duration is clamped to instead of a local hardcoded constant; `allow_subfloor_timing` disables the `ping_interval ≥ 5000` and `ping_timeout ≥ 2×` checks from WIRE.md §2.10 step 2. |
 | 7 | Smoke it | `cd conformance/runner && go run . --sdk python --mode pair --fixture happy_roundtrip -v` (or `go run . --adapter python=path/to/adapter` to point at a prebuilt binary) — Go server ↔ Python client, one scenario, full logs. |
 | 8 | Run the matrix | `make conformance RUNNER_ARGS="--sdk python"`. Expect every `role:"client"` fixture and every pair scenario with Python as client. In pair mode, an `await.code` in a scenario step is matched against the event's `name` string field (e.g. `"STREAM_LIMIT"`), never its numeric `code` — `conformance/runner/driver/pair.go`'s `eventMatches` is the reference. |
 | 9 | Wire CI | Add `python` to the workflow's SDK list and bump `conformance/COUNTS.json`. |

@@ -1,9 +1,17 @@
-// End-to-end test of the conformance driver against the two real adapters
+// End-to-end test of the conformance driver against real adapter binaries
 // (docs/CONFORMANCE.md's "go test ./conformance/runner/... -run
-// TestConformance" hook, section 5). Builds both adapters fresh (skipping
-// cleanly, not failing, if a toolchain is missing) and runs a handful of
-// fixtures plus one pair scenario through the exact same driver code path
-// main.go uses.
+// TestConformance" hook, section 5). The spec repo ships no SDK adapters of
+// its own (they live with each SDK's repo now, per docs/CONFORMANCE.md
+// section 6's "run" shim contract), so this test is driven entirely by
+// optional environment variables naming already-built adapter shims:
+//
+//	WSMIXER_E2E_GO_ADAPTER=/path/to/go/run
+//	WSMIXER_E2E_JS_ADAPTER=/path/to/js/run
+//
+// With neither set (the default -- e.g. a bare `go test ./...` in this
+// repo) the whole test skips cleanly. An SDK repo's own CI (or a human
+// pointing this at a locally built adapter) can set one or both to actually
+// exercise the driver end-to-end against a real adapter.
 package main
 
 import (
@@ -13,23 +21,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mcpwarp/ws-mixer/conformance/runner/adapter"
-	"github.com/mcpwarp/ws-mixer/conformance/runner/driver"
-	"github.com/mcpwarp/ws-mixer/conformance/runner/fixture"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/adapter"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/driver"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/fixture"
 )
 
 func TestConformanceE2E(t *testing.T) {
+	goPath := os.Getenv("WSMIXER_E2E_GO_ADAPTER")
+	jsPath := os.Getenv("WSMIXER_E2E_JS_ADAPTER")
+	if goPath == "" && jsPath == "" {
+		t.Skip("WSMIXER_E2E_GO_ADAPTER / WSMIXER_E2E_JS_ADAPTER not set; this repo ships no adapters of its own to build (see file comment)")
+	}
+
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	workDir := t.TempDir()
-
-	goPath, err := buildGoAdapter(repoRoot, workDir)
-	if err != nil {
-		t.Skipf("go adapter unavailable, skipping: %v", err)
-	}
-	jsPath, jsErr := buildJSAdapter(repoRoot, workDir)
 
 	sd, err := driver.LoadStepDriving(filepath.Join(repoRoot, "conformance", "scenarios", "step-driving.json"))
 	if err != nil {
@@ -44,23 +51,24 @@ func TestConformanceE2E(t *testing.T) {
 		if err != nil {
 			t.Fatalf("loading fixture %s: %v", name, err)
 		}
-		t.Run("go/"+name, func(t *testing.T) {
-			runFixtureForTest(t, f, "go", goPath, timing, sd)
-		})
-		if f.Role == "client" {
-			if jsErr != nil {
-				t.Skipf("js adapter unavailable: %v", jsErr)
-			}
+		if goPath != "" {
+			t.Run("go/"+name, func(t *testing.T) {
+				runFixtureForTest(t, f, "go", goPath, timing, sd)
+			})
+		}
+		if jsPath != "" && f.Role == "client" {
 			t.Run("js/"+name, func(t *testing.T) {
 				runFixtureForTest(t, f, "js", jsPath, timing, sd)
 			})
 		}
 	}
 
-	t.Run("pair/happy_roundtrip/go-go", func(t *testing.T) {
-		runPairForTest(t, repoRoot, "happy_roundtrip", "go", goPath, "go", goPath, timing)
-	})
-	if jsErr == nil {
+	if goPath != "" {
+		t.Run("pair/happy_roundtrip/go-go", func(t *testing.T) {
+			runPairForTest(t, repoRoot, "happy_roundtrip", "go", goPath, "go", goPath, timing)
+		})
+	}
+	if goPath != "" && jsPath != "" {
 		t.Run("pair/happy_roundtrip/go-js", func(t *testing.T) {
 			runPairForTest(t, repoRoot, "happy_roundtrip", "go", goPath, "js", jsPath, timing)
 		})

@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mcpwarp/ws-mixer/conformance/runner/adapter"
-	"github.com/mcpwarp/ws-mixer/conformance/runner/fixture"
-	"github.com/mcpwarp/ws-mixer/conformance/runner/rawactor"
-	"github.com/mcpwarp/ws-mixer/conformance/runner/wire"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/adapter"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/fixture"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/rawactor"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/wire"
 )
 
 // Result is one (sdk, fixture-or-scenario) cell of the report.

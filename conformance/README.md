@@ -6,42 +6,53 @@ than claiming a perfect realization of the design doc under a tight timeline).
 
 ## Running it
 
+This repo (`ws-mixer-spec`) ships no SDK adapters of its own — see [`docs/CONFORMANCE.md`](../docs/CONFORMANCE.md)
+§5. Running the full matrix therefore means pointing the runner at adapters built by an SDK repo:
+
 ```sh
-# Everything: builds the runner + every adapter it can find, runs the full matrix.
-make conformance GO=$HOME/.goenv/versions/1.24.4/bin/go
+# From inside a checkout of this repo, with an already-built adapter directory elsewhere:
+go run ./conformance/runner \
+  --spec-root . \
+  --adapters-dir /path/to/adapters \
+  --sdk go,js --mode all \
+  --counts /path/to/COUNTS.json
 
-# One SDK, with a JUnit report (path is resolved against the repo root):
-make conformance GO=... RUNNER_ARGS="--sdk go --report build/conformance.xml"
-
-# Direct invocation, equivalent to the above:
-cd conformance/runner && GO=$HOME/.goenv/versions/1.24.4/bin/go go run . --sdk go,js
+# From an SDK repo's own CI, against a fetched copy of this repo (see REPOS.md's spec.pin):
+go run "$SPEC/conformance/runner" \
+  --spec-root "$SPEC" \
+  --adapter go=./build/go-adapter/run \
+  --sdk go --mode fixture \
+  --counts ./conformance/COUNTS.json \
+  --report ./build/conformance.xml
 
 # Narrow to one fixture/scenario while iterating:
-go run . --sdk go --mode fixture --fixture credit_violation -v
+go run ./conformance/runner --spec-root . --adapters-dir /path/to/adapters \
+  --sdk go --mode fixture --fixture credit_violation -v
 ```
 
-`GO` is expanded by the runner itself (a leading `~`/`~/` and any `$HOME` reference), not just by
-the shell: `os/exec` never invokes a shell, so a literal, unexpanded `~` reaching the runner's own
-environment (e.g. via a quoted `GO="~/.goenv/..."` in a script or CI config, which bash does not
-tilde-expand) would otherwise try to `fork/exec` a path that doesn't exist. If the Go adapter still
-can't be built after that expansion (bad path, broken toolchain, compile error), the runner exits
-non-zero with the build error printed to stderr — it never silently downgrades every `go-*` key to
-SKIP, since Go is the reference/only-server implementation and a build failure there is a
-config/toolchain problem, not a "this SDK isn't present" gap.
+`--spec-root` defaults to walking up from the working directory looking for `spec/fixtures/sequences`
+(so a plain `go run ./conformance/runner` from inside this repo needs no flags at all in fixture-only
+runs that supply no adapters); `--adapters-dir` defaults to `<spec-root>/conformance/adapters`;
+`--counts` defaults to `<spec-root>/conformance/COUNTS.json`. This repo ships none of the last two —
+every adapter and every `COUNTS.json` floor lives in the SDK repo that owns it.
 
-Flags: `--time-scale` (default `1/50` — see "Timing floor" below), `--sdk <comma-separated names>`
-(defaults to every adapter directory discovered under `conformance/adapters/*/`, currently `go,js`),
-`--fixture <glob>`, `--mode fixture|pair|all` (default `all`), `--report <path>` (JUnit XML),
-`--adapter name=path` (override discovery for one SDK, or add one with no directory of its own,
-e.g. `--sdk python --adapter python=/path/to/adapter`), `--strict` (bool, **default true**: the raw
-actor fails on any observed frame the current step doesn't expect instead of silently skipping it
-— docs/CONFORMANCE.md section 2), `-v` (print failure detail immediately).
+Other flags: `--time-scale` (default `1/50` — see "Timing floor" below), `--sdk <comma-separated names>`
+(defaults to every adapter directory discovered under `--adapters-dir`), `--fixture <glob>`,
+`--mode fixture|pair|all` (default `all`), `--report <path>` (JUnit XML), `--adapter name=path`
+(override discovery for one SDK, or add one with no directory of its own, e.g.
+`--sdk python --adapter python=/path/to/adapter`), `--strict` (bool, **default true**: the raw actor
+fails on any observed frame the current step doesn't expect instead of silently skipping it — see
+`docs/CONFORMANCE.md` §2), `-v` (print failure detail immediately).
 
-Gates this satisfies: `make check-spec` (Node-only); `go test -race ./...` inside
-`conformance/runner` (codec round-trip, adapter protocol + fake-adapter driver tests, an
-end-to-end run of 4 fixtures + 2 pair cells against the real adapters); `go test -race ./...` in
-`go/`, both with and without `-tags conformance` — green; `npm test` in `js/` — green. Neither
-`go test` in `go/` nor `npm test` in `js/` depends on the runner.
+A build/exec failure for an SDK named explicitly on `--sdk` is fatal; the same failure for an SDK that
+was only discovered (not named explicitly) degrades to a SKIP row instead — the runner has no
+per-language special case any more (see `docs/CONFORMANCE.md` §5).
+
+Gates this repo's own CI satisfies: `node spec/tools/check-fixtures.mjs` (fixture/schema sanity);
+`go test -race ./...` at this repo's root (codec round-trip, adapter protocol + fake-adapter driver
+tests; `e2e_test.go` skips cleanly unless `WSMIXER_E2E_GO_ADAPTER`/`WSMIXER_E2E_JS_ADAPTER` point at
+already-built adapter shims). Each SDK repo's own CI additionally runs `go test ./...` / `npm test` for
+that SDK, entirely independent of this runner.
 
 ## The matrix, as actually implemented
 
@@ -98,7 +109,7 @@ re-established).
   `app_before_welcome`, ...), since `go/wsmixer`'s `Listener.ServeHTTP` only calls `OnConn` (where
   the adapter's `disconnected` watcher gets attached) *after* the handshake succeeds. `close_code`
   is then checked *against* that `error{}` frame's code as an invariant (`close_code == 4000 +
-  error_code`, `1000` for `NO_ERROR`, per OVERVIEW.md section 2.8), and the adapter's own
+  error_code`, `1000` for `NO_ERROR`, per WIRE.md section 2.8), and the adapter's own
   `disconnected.error_name` is checked only as a best-effort secondary cross-check when the adapter
   happens to have reported one by then. The second standing invariant from docs/CONFORMANCE.md
   section 4 (`error` is the last stream-0 message before the close) is also checked live here
@@ -146,7 +157,7 @@ re-established).
   pair mode never scales `ping_interval_ms`/`ping_timeout_ms` at all: no pair scenario here waits
   out a real keepalive timeout, and scaling it down surfaced a *second*, deeper issue (next point).
 - **`AllowSubfloorTiming` now actually reaches the real Go client (fixed).** `go/wsmixer`'s
-  `welcome.ping_interval >= 5000ms` / `ping_timeout >= 2×ping_interval` floor (OVERVIEW.md section
+  `welcome.ping_interval >= 5000ms` / `ping_timeout >= 2×ping_interval` floor (WIRE.md section
   2.9/2.10) used to be checked in **two** places: `Conn.applyWelcome` (client.go, semantic
   validation, gated on the timing hook) *and* `control_messages.go`'s `parseWelcome` (the
   stateless, context-free wire parser shared by every caller of `ParseControl`, checked
@@ -227,7 +238,7 @@ re-established).
   effect in the order the runner sent them regardless of ack timing; a queue that fills up behind a
   stalled op error-acks the new command with `queue_full` instead of blocking the stdin-reading
   loop. Acks are unchanged in shape and still fire from inside the command that produced them.
-  `reset` deliberately does **not** go through this queue: OVERVIEW.md section 2.5 makes RESET
+  `reset` deliberately does **not** go through this queue: WIRE.md section 2.5 makes RESET
   abortive — it must discard buffered data and unblock writers immediately, not wait behind a
   `write` that is itself blocked on exhausted send credit. Both adapters cancel/abort the stalled
   queue (Go: the worker's per-stream `context.WithCancel`, passed to `Stream.WriteContext`; JS:
@@ -275,44 +286,53 @@ re-established).
 
 ## Layout
 
+This repo ships the runner and the scenarios it drives, and nothing that implements any SDK:
+
 ```
-conformance/
-  README.md              this file
-  runner/                Go module (own go.mod; does not import go/wsmixer)
-    main.go, build.go     CLI flags, adapter discovery/build, matrix expansion
-    wire/                 independent frame codec (docs/CONFORMANCE.md section 2)
-    rawactor/              the raw wire actor, both roles
-    adapter/               spawn, JSON-lines codec, process teardown
-    fixture/               spec/fixtures/sequences/*.json loader
-    driver/                fixture + pair driving logic, the section 4 expect mapping
-    codes/                 the OVERVIEW.md section 2.8 error code table (independent copy)
-    report/                stdout table + JUnit XML
-    e2e_test.go            go test entrypoint (docs/CONFORMANCE.md section 5's TestMain hook)
-  adapters/
-    go/     go.mod, main.go   replace => ../../../go; built with `-tags conformance` (build.go),
-                               required for wsmixer.AllowSubfloorTiming to exist
-    js/     adapter.mjs        imports ../../../js/dist (see deviation above)
-  scenarios/
-    *.json                 pair-mode scenarios
-    step-driving.json      the section 3.3 sidecar
+ws-mixer-spec/
+  go.mod, go.sum          root module github.com/mcpwarp/ws-mixer-spec; the runner is a package
+                           of it (./conformance/runner), not a nested module
+  conformance/
+    README.md              this file
+    runner/
+      main.go, build.go     CLI flags, generic adapter discovery/build, matrix expansion
+      wire/                 independent frame codec (docs/WIRE.md section 2)
+      rawactor/              the raw wire actor, both roles
+      adapter/               spawn, JSON-lines codec, process teardown
+      fixture/               spec/fixtures/sequences/*.json loader
+      driver/                fixture + pair driving logic, the section 4 expect mapping
+      codes/                 the WIRE.md section 2.8 error code table (independent copy)
+      report/                stdout table + JUnit XML
+      e2e_test.go            go test entrypoint; skips unless WSMIXER_E2E_*_ADAPTER is set (see below)
+    scenarios/
+      *.json                 pair-mode scenarios
+      step-driving.json      the section 3.3 sidecar
 ```
+
+Every SDK adapter lives in that SDK's own repo instead (`ws-mixer-go/conformance/adapter/`,
+`ws-mixer-js/conformance/adapter/`, `ws-mixer-server/cmd/conformance-adapter/`) — see
+`docs/CONFORMANCE.md` §5 and [`docs/REPOS.md`](../docs/REPOS.md).
 
 ## Using the Go adapter as a fake tunnel for external e2e tests
 
-The Go adapter (`conformance/adapters/go/main.go`) is a thin shell over `go/wsmixer` with no
-protocol logic of its own (docs/CONFORMANCE.md section 1). Because it just relays a real
-`go/wsmixer` server over JSON-lines commands/events on stdin/stdout, it's also useful standalone,
-outside the runner, as a scriptable fake tunnel endpoint for external end-to-end tests that want a
-byte-exact request/response over one stream without standing up a full ws-mixer deployment.
+**This section describes the Go adapter, which now lives in the `ws-mixer-go` repo
+(`conformance/adapter/`), not in this one.** It is kept here because it documents the stdin/stdout
+protocol itself (versioned in `docs/CONFORMANCE.md`), which is spec-repo material even though the
+binary that speaks it isn't. Adjust the build command below to wherever your checkout of
+`ws-mixer-go` lives.
 
-Build it (the `conformance` build tag is required — it's what makes `wsmixer.AllowSubfloorTiming`
-available; see `main.go`'s package comment). `conformance/adapters/go` is its own Go module (its own
-`go.mod`, `replace`d onto `../../../go` — there is no root module at the repo root to build it
-against as a package path), so build from inside that directory. Requires Go 1.24+ (the module's own
-`go.mod` `go` directive):
+The Go adapter is a thin shell over `ws-mixer-go`'s `wsmixer` package with no protocol logic of its
+own (docs/CONFORMANCE.md section 1). Because it just relays a real `wsmixer` server over JSON-lines
+commands/events on stdin/stdout, it's also useful standalone, outside the runner, as a scriptable
+fake tunnel endpoint for external end-to-end tests that want a byte-exact request/response over one
+stream without standing up a full ws-mixer deployment.
+
+Build it from inside a `ws-mixer-go` checkout (the `conformance` build tag is required — it's what
+makes `wsmixer.AllowSubfloorTiming` available; see that repo's adapter package comment). Requires
+Go 1.24+:
 
 ```sh
-cd conformance/adapters/go && go build -tags conformance -o /tmp/go-adapter .
+cd conformance/adapter && go build -tags conformance -o /tmp/go-adapter .
 ```
 
 Spawn it and drive it by writing one JSON object per line to its stdin and reading one JSON object

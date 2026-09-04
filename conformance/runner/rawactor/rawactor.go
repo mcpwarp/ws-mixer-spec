@@ -20,7 +20,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/mcpwarp/ws-mixer/conformance/runner/wire"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/wire"
 )
 
 const subprotocol = "ws-mixer.v1"

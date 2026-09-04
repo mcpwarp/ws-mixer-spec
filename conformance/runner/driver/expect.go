@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mcpwarp/ws-mixer/conformance/runner/adapter"
-	"github.com/mcpwarp/ws-mixer/conformance/runner/codes"
-	"github.com/mcpwarp/ws-mixer/conformance/runner/rawactor"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/adapter"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/codes"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/rawactor"
 )
 
 // negativeWindow is how long checkExpect waits before concluding a `null`

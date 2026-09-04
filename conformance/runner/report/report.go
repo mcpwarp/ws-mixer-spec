@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mcpwarp/ws-mixer/conformance/runner/driver"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/driver"
 )
 
 // PrintTable writes the "MODE SDK FIXTURE/SCENARIO RESULT" table plus the

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mcpwarp/ws-mixer/conformance/runner/driver"
+	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/driver"
 )
 
 func writeCounts(t *testing.T, floors map[string]int) string {
@@ -66,14 +66,18 @@ func TestCheckCountsUnseenKeyIsIgnored(t *testing.T) {
 	}
 }
 
-// TestDiscoverSDKsFindsGoAndJS checks that discovery walks
-// conformance/adapters/*/ instead of relying on a hardcoded {go, js} list.
-func TestDiscoverSDKsFindsGoAndJS(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Fatal(err)
+// TestDiscoverSDKsFindsSubdirectories checks that discovery walks
+// <adaptersDir>/*/ generically -- any subdirectory is a candidate SDK, with
+// no per-name special casing (this spec repo itself ships no adapters; SDK
+// repos point --adapters-dir at their own conformance/adapter/ tree).
+func TestDiscoverSDKsFindsSubdirectories(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"go", "js", "python"} {
+		if err := os.MkdirAll(filepath.Join(dir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	sdks, err := discoverSDKs(repoRoot)
+	sdks, err := discoverSDKs(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,23 +85,19 @@ func TestDiscoverSDKsFindsGoAndJS(t *testing.T) {
 	for _, s := range sdks {
 		names[s.name] = true
 	}
-	if !names["go"] || !names["js"] {
-		t.Fatalf("discoverSDKs(%q) = %v, want it to include go and js", repoRoot, names)
+	if !names["go"] || !names["js"] || !names["python"] {
+		t.Fatalf("discoverSDKs(%q) = %v, want it to include go, js and python", dir, names)
 	}
 }
 
-// TestDiscoverSDKsMissingAdaptersDirIsNotFatal covers a repo checkout (or
-// test temp dir) with no conformance/adapters/ at all: discovery should
-// return an empty list, not an error, so --sdk can still synthesize a SKIP
-// row for whatever was named.
+// TestDiscoverSDKsMissingAdaptersDirIsNotFatal covers an --adapters-dir that
+// doesn't exist at all: discovery should return an empty list, not an
+// error, so --sdk can still synthesize a SKIP row for whatever was named.
 func TestDiscoverSDKsMissingAdaptersDirIsNotFatal(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "spec", "fixtures", "sequences"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	sdks, err := discoverSDKs(dir)
+	sdks, err := discoverSDKs(filepath.Join(dir, "adapters"))
 	if err != nil {
-		t.Fatalf("discoverSDKs on a repo with no adapters/ dir: %v", err)
+		t.Fatalf("discoverSDKs on a nonexistent adapters dir: %v", err)
 	}
 	if len(sdks) != 0 {
 		t.Fatalf("discoverSDKs = %v, want empty", sdks)
