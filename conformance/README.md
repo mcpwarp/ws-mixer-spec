@@ -201,7 +201,7 @@ re-established).
 - **`auth_failure`'s mismatched token is a runner-side special case**, not something the fixture
   format encodes: the raw actor deliberately dials with an `Authorization` header that does not
   match the `hello.token` it's about to send, because `go/wsmixer`'s built-in
-  `performServerHandshake` rejects that mismatch before any `Authenticate` hook even runs — for
+  `AcceptConn` rejects that mismatch before any `Authenticate` hook even runs — for
   every other fixture, header and `hello.token` match.
 - **Server-role `connected` event, added.** `OnConn` used to just wire up `OnApp`/`OnDrain`/the
   disconnect watcher and never told the runner (or an external fake-tunnel consumer) that a
