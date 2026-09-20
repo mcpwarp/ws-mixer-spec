@@ -20,6 +20,7 @@ var byName = map[string]uint32{
 	"UNAUTHORIZED":       0x0b,
 	"GOING_AWAY":         0x0c,
 	"KEEPALIVE_TIMEOUT":  0x0d,
+	"APPLICATION_CLOSE":  0x0e,
 }
 
 var byCode = func() map[uint32]string {

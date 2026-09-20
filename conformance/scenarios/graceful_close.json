@@ -1,5 +1,5 @@
 {
-  "description": "Client-initiated graceful close with no streams open: drain{client_requested}, then a clean NO_ERROR close on both sides.",
+  "description": "Client-initiated graceful close with no streams open: a graceful NO_ERROR close on both sides; a client SDK that implements client-requested drain (WIRE.md section 2.10 step 14) sends it first, but the raw connection path a client without a live reconnecting SDK instance uses does not, so this scenario does not assert drain{client_requested} itself.",
   "steps": [
     { "actor": "client", "cmd": { "cmd": "close", "code": 0, "message": "conformance graceful_close" } },
     { "actor": "client", "await": { "event": "disconnected" } },

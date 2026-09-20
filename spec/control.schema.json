@@ -198,7 +198,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295,
-          "description": "one 32-bit space shared by RESET and connection errors; 0x0000-0x0FFF reserved for ws-mixer, >=0x10000000 free for the layer above"
+          "description": "one 32-bit space shared by RESET and connection errors; 0x0000-0x0FFF assigned by this spec (emitted by ws-mixer itself, except APPLICATION_CLOSE 0x0e which is sent only by the application), >=0x10000000 free for the layer above to define"
         },
         "message": {
           "type": "string",

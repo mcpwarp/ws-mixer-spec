@@ -349,7 +349,9 @@ parsers disagree.
 ### 2.8 Error codes
 
 One 32-bit space shared by RESET and connection errors.
-`0x0000_0000–0x0000_0FFF` reserved for ws-mixer; **`≥ 0x1000_0000` is free for the layer above**.
+`0x0000_0000–0x0000_0FFF` is assigned by this spec; **`≥ 0x1000_0000` is free for the layer above to
+define**. Codes in the ws-mixer range are emitted by ws-mixer itself, with one exception: `APPLICATION_CLOSE`
+(`0x0e`) is defined here but only ever sent by the application (see below).
 Unknown codes MUST NOT trigger special behaviour — treat as `INTERNAL_ERROR`.
 
 | Code | Name | Stream | Conn | WS close | Server sends | Client sends | Meaning |
@@ -368,12 +370,27 @@ Unknown codes MUST NOT trigger special behaviour — treat as `INTERNAL_ERROR`.
 | `0x0b` | `UNAUTHORIZED` | | ✔ | 4011 | ✔ | | auth failed or expired |
 | `0x0c` | `GOING_AWAY` | | ✔ | 4012 | ✔ | | drain complete; **reconnect immediately** |
 | `0x0d` | `KEEPALIVE_TIMEOUT` | | ✔ | 4013 | ✔ | ✔ | no `pong` within the deadline |
-| `0x0e` | *(reserved)* | | | 4014 | | | ws-mixer has no notion of identity, so it has no built-in "replaced" error. Left free for an application-level close reason (e.g. mcpwarp draining a superseded connection) rather than reused, so a future ws-mixer code never collides with one an app already shipped |
+| `0x0e` | `APPLICATION_CLOSE` | | ✔ | 4014 | ✔ | ✔ | the application above ws-mixer closed the connection for its own reason; **ws-mixer itself never emits it** — see below |
 
 Mechanical rule: **`ws_close = 4000 + error_code`**, `1000` for `NO_ERROR`. 4005–4008 are unassigned because
 `0x05`–`0x08` are stream-level only — **leave the gap, do not renumber**. The `REFUSED_STREAM` / `CANCEL`
 split is load-bearing: `REFUSED_STREAM` promises nothing was processed so the layer above may safely replay;
 `CANCEL` promises nothing.
+
+`APPLICATION_CLOSE` is connection-level only — it is not a stream `RESET` code. It may be sent by either
+side's application, via the SDK's close API, never by ws-mixer itself. The reason is carried in
+`error.message` and, truncated to 123 UTF-8 bytes on a character boundary, in the WS close reason; because
+there is exactly one application close code, applications SHOULD start it with a stable machine-readable
+token (e.g. `CONNECTION_LIMIT: over per-tenant cap`). A real trap: application error codes `>= 0x1000_0000`
+(§2.8's own free-for-the-layer-above range) cannot be used for a connection close. The binding limit is RFC
+6455 §7.4.2's private-use close-code range, 4000–4999: `ws_close = 4000 + code` is only a legal close code
+for `code ≤ 0x3e7` (999); codes `>= 0x1000_0000` additionally don't even fit the 16-bit close-code field.
+Those codes remain usable for stream `RESET` only; a connection close needs `APPLICATION_CLOSE` (`0x0e` /
+4014) instead, with the real reason carried in `error.message` and the close reason. This applies whether
+the unmappable code is the SDK's own caller's or a peer's `error.code` it is closing on: an SDK MUST NOT
+attempt an illegal close code (WebSocket libraries respond by sending no close frame at all, or by
+throwing, leaving the peer a bare `1006`). It sends WS close `4002` (`INTERNAL_ERROR`'s close code) instead,
+while `error.code` still carries the real, unclamped code.
 
 Non-ws-mixer close codes a client must still handle: `1001` (treat as 4012), `1006` (abnormal, normal
 backoff), `1009` (library rejected an oversized message), `1011` (an SDK left its library's own
@@ -532,10 +549,12 @@ enough and must be set explicitly.
 | `drain` received | new connection **immediately and in parallel**, before the old one closes. Jitter `random(0, 2000) ms` only |
 | close `4012` with no preceding `drain` | reconnect immediately, same jitter |
 | close `4013 KEEPALIVE_TIMEOUT` | one immediate attempt, then normal backoff |
+| close `4014 APPLICATION_CLOSE` | **not fatal**; start at `cap` (delay = random(0, cap)) — an application close is a deliberate server-side decision made after `welcome`, where the attempt counter has just been reset and normal backoff would never climb; an SDK MUST NOT treat it as a protocol failure |
 | close `1006` / TCP reset / DNS failure / HTTP 5xx | normal backoff (429: honour `Retry-After`) |
 | close `4001` / `4003` / `4004` | normal backoff **and a loud developer-facing error** — these mean an SDK bug and a silent retry loop hides it |
 | close `4009` | start at `cap`; honour `retry_after_ms` |
 | close `4010`, `4011`; HTTP 401/403/404; missing subprotocol echo | **fatal — never reconnect.** Surface and exit |
+| any other **4xxx** close code, including `4002` and codes unknown to this version | normal backoff (a locally initiated close is not a reconnect trigger at all) |
 
 ```
 delay = random(0, min(cap, base * 2^attempt))     # AWS "full jitter"
@@ -547,6 +566,12 @@ Resetting on the 101 gives a hot loop against a server that accepts and immediat
 rather than gRPC's 120 s because a dead tunnel means the user's MCP server is unreachable from Claude, and
 two minutes of dead time on a developer tool is user-visible.
 
+A close that arrives after `welcome` always sees `attempt` freshly reset to 0, which is why the codes that
+signal a deliberate post-`welcome` refusal (`4009`, `4014`) start at `cap` instead of normal backoff — normal
+backoff's `base * 2^attempt` would otherwise never climb past its first, near-zero step. This start-at-cap
+treatment applies only to a `4009`/`4014` received after `welcome`; one received before `welcome` (`attempt`
+never having been reset) uses normal backoff instead, same as any other pre-`welcome` failure.
+
 **In-flight streams are lost on reconnect. There is no resumption.** Ids restart at 1; there is no continuity
 of ids, buffers or credit. A handler must be able to tell "the response ended" (EOF) from "the tunnel died"
 (error), because the layer above needs different behaviour for each. Retry is the application's job.
@@ -554,11 +579,12 @@ of ids, buffers or credit. A handler must be able to tell "the response ended" (
 **Connection replacement is not ws-mixer's business.** ws-mixer has no notion of identity: every connection
 is independent, and one client reconnecting before its old socket dies just looks like two unrelated
 connections to the mux. Whether that is a problem, and what to do about it, is decided entirely by the
-application, using two primitives ws-mixer already exposes: a server-side connection-accept hook sees every
-new connection before it is accepted and can look up whatever identity concept the application uses, and
-`Conn.Drain(reason, opts)` (§2.9) can be called on any existing `Conn` at any time. mcpwarp, for example,
-drains the old connection for free-tier users (`reason:"replaced"`, a short `deadline_ms`) and keeps a pool
-of connections per user for paid tiers instead. ws-mixer supplies the mechanism; it does not pick the policy.
+application, using three primitives ws-mixer already exposes: a server-side connection-accept hook sees
+every new connection before it is accepted and can look up whatever identity concept the application uses,
+`Conn.Drain(reason, opts)` (§2.9) can be called on any existing `Conn` at any time, and an immediate close
+with `APPLICATION_CLOSE` (§2.8) is available when draining is too slow. mcpwarp, for example, drains the
+old connection for free-tier users (`reason:"replaced"`, a short `deadline_ms`) and keeps a pool of
+connections per user for paid tiers instead. ws-mixer supplies the mechanism; it does not pick the policy.
 
 ### 2.10 Python implementer checklist
 
@@ -576,6 +602,8 @@ of connections per user for paid tiers instead. ws-mixer supplies the mechanism;
 12. Control dispatcher, a `match` on `t`: `ping`→`pong` at the **head** of the control queue · `pong`→ unknown id is a conn error, else record `last_pong_at`/RTT · `drain`→ stop expecting OPEN, start reconnecting now, arm the deadline timer · `error`→ log loudly, close, **never reply** · `app`→ hand `body` to the application · `hello`/`welcome` after the handshake → conn error · unknown `t` → conn error naming the string.
 13. Three timers, that is all: ping (first sleep `random(0, interval)`), watchdog (`now - last_pong_at > ping_timeout` → `error{KEEPALIVE_TIMEOUT}` + close 4013), handshake timer (cancelled by `welcome`).
 14. On SIGINT/SIGTERM: `drain{reason:"client_requested"}`, wait up to 5 s, `error{NO_ERROR}`, close 1000.
+    Expose that same close path with an arbitrary code too, so an application can close with
+    `APPLICATION_CLOSE` (14 / 4014) instead of `NO_ERROR`.
 15. Validation order, each step with its own message: parse → is object → has string `t` → `t` is known → per-type field checks. In tests, run `spec/fixtures/*.json` against `jsonschema.Draft202012Validator` **and** your hand-written validator and assert they agree.
 
 Budget: **~400–550 lines** total. If an implementation is materially longer, something in this spec is

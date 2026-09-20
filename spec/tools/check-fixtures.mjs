@@ -167,6 +167,7 @@ const ERROR_CODES = {
   UNAUTHORIZED: 0x0b,
   GOING_AWAY: 0x0c,
   KEEPALIVE_TIMEOUT: 0x0d,
+  APPLICATION_CLOSE: 0x0e,
 };
 
 function wsCloseForCode(name) {

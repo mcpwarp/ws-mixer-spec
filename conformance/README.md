@@ -59,27 +59,33 @@ that SDK, entirely independent of this runner.
 | Mode | Go plays | JS plays | Count |
 |---|---|---|---|
 | fixture | server (19 fixtures) + client (24 fixtures) | client (24 fixtures) | 43 (SDK, fixture) cells |
-| pair | server, client | client only | 8 scenarios × {go→go, go→js} = 16 cells |
+| pair | server, client | client only | 9 scenarios × {go→go, go→js} = 18 cells |
 
 All 43 `spec/fixtures/sequences/*.json` fixtures run against Go (19 `role:"server"` + 24
-`role:"client"`); the 24 `role:"client"` fixtures also run against JS (the JS SDK has no server), reported as `js-server`
-SKIPs for the 19 it can't play. All 8 pair
-scenarios run go→go and go→js (`drain_reconnect`'s go→go cell is a SKIP, not a FAIL or a PASS —
-see "SDK changes made" / `adapters/go/main.go`'s reconnect-unsupported reply). No orphan processes
-are left behind after a run (`pgrep -f 'adapter|runner|goserver'` empty). `conformance/COUNTS.json`
-is the checked-in floor on passing cells (docs/CONFORMANCE.md section 5) — it, not this paragraph,
-is the source of truth for the exact current pass count.
+`role:"client"`); the 24 `role:"client"` fixtures also run against JS (the JS SDK has no server),
+reported as `js-server` SKIPs for the 19 it can't play. All 9 pair scenarios run go→go and go→js
+(`drain_reconnect` and `application_close` need a client SDK with a reconnect loop of its own; an
+adapter whose SDK has none replies `unsupported` to `connect{reconnect:{enabled:true}}`, and that
+SDK's cells for those two scenarios are reported as SKIPs rather than FAILs — see "SDK changes
+made"). No orphan processes are left behind after a run (`pgrep -f 'adapter|runner|goserver'`
+empty). Each consumer repo's own `conformance/COUNTS.json` is the checked-in floor on passing cells
+(docs/CONFORMANCE.md section 5) — it, not this paragraph, is the source of truth for the exact
+current pass count.
 
 Pair scenarios (`conformance/scenarios/*.json`, excluding the `step-driving.json` sidecar):
 `happy_roundtrip`, `n_streams_fanout` (3 streams, open/write/half-close/respond/half-close),
 `app_roundtrip`, `half_close_sse`, `drain_with_inflight`, `big_stream_flow_control` (1 MiB single
 write, well over the default 262144-byte window — the ack only returns once several full
 credit-refill rounds have happened, which is the flow-control proof), `graceful_close`,
-`drain_reconnect` (server drains an in-flight stream; the JS client -- the only scenario that runs
-with `connect.reconnect.enabled:true` -- sees its connection close with GOING_AWAY/4012 and its own
-`MixerClient` reconnect loop redial automatically, surfaced as a `reconnected` event; a fresh stream
-opened after that round-trips normally, proving the new connection is fully live rather than just
-re-established).
+`drain_reconnect` and `application_close` (the two scenarios that run with
+`connect.reconnect.enabled:true`): `drain_reconnect` -- server drains an in-flight stream; the JS
+client sees its connection close with GOING_AWAY/4012 and its own `MixerClient` reconnect loop
+redial automatically (the Go client does the same since v0.4.0), surfaced as a `reconnected` event;
+a fresh stream opened after that round-trips normally, proving the new connection is fully live
+rather than just re-established. `application_close` -- server closes with `APPLICATION_CLOSE`/4014,
+a code ws-mixer never emits itself; the client's reconnect loop treats it as non-fatal but starts at
+the backoff cap (WIRE.md section 2.9), so this scenario pins a small `reconnect.capMs`/`baseMs`
+(docs/CONFORMANCE.md section 1.1) to stay inside the runner's step timeout, and redials.
 
 ## Decisions on `docs/CONFORMANCE.md` section 7's open questions
 
@@ -170,7 +176,7 @@ re-established).
   settable only through `wsmixer.AllowSubfloorTiming(*Options)` in
   `go/wsmixer/conformance_hooks.go`, which carries `//go:build conformance` — so a normal `go
   build`/`go vet`/`go test ./...` of `go/wsmixer` never even compiles the hook in, let alone lets
-  production code call it. The Go adapter (`conformance/adapters/go/main.go`) calls it when
+  production code call it. The Go adapter (`ws-mixer-go/conformance/adapter/adapter.go`) calls it when
   `set_options.allow_subfloor_timing:true`, and is therefore now built with `-tags conformance`
   (`conformance/runner/build.go`'s `buildGoAdapter`) — without that tag the adapter fails to
   compile, since `wsmixer.AllowSubfloorTiming` doesn't exist. `go test -race ./...` in `go/` is
@@ -245,7 +251,7 @@ re-established).
   marking the queue aborted, relying on `stream.reset()`'s own `destroy()` to settle a write
   already in flight) before calling `Reset`/`reset()`, then drain whatever was still queued with an
   error ack rather than letting it run against an already-reset stream. Regression coverage:
-  `conformance/adapters/go/race_test.go`'s `TestWriteCloseWriteOrderingRace` sends three `write`s
+  `ws-mixer-go/conformance/adapter/race_test.go`'s `TestWriteCloseWriteOrderingRace` sends three `write`s
   immediately followed by `close_write`, none of their acks awaited, and asserts the peer receives
   every byte in order followed by a clean EOF — reproducibly fails (truncated to zero bytes) against
   the pre-fix code and passes under `-race`; `TestResetUnblocksBlockedWrite` exhausts a stream's
