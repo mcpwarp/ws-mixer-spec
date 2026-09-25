@@ -150,6 +150,43 @@ func TestValidateScenarioAcceptsWellFormedSteps(t *testing.T) {
 	}
 }
 
+// TestValidateScenarioCloseCode checks the close-specific check D-2026-09-25-01
+// added: a close step's code must be absent, 0, or 14 (APPLICATION_CLOSE).
+func TestValidateScenarioCloseCode(t *testing.T) {
+	cases := []struct {
+		name    string
+		cmd     string
+		wantErr bool
+	}{
+		{"absent", `{"cmd":"close"}`, false},
+		{"zero", `{"cmd":"close","code":0}`, false},
+		{"fourteen", `{"cmd":"close","code":14}`, false},
+		{"five", `{"cmd":"close","code":5}`, true},
+		{"4014", `{"cmd":"close","code":4014}`, true},
+		{"string code", `{"cmd":"close","code":"14"}`, true},
+		{"null code", `{"cmd":"close","code":null}`, true},
+		{"fractional", `{"cmd":"close","code":14.5}`, true},
+		{"negative fourteen", `{"cmd":"close","code":-14}`, true},
+		{"bool code", `{"cmd":"close","code":true}`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var s Scenario
+			raw := `{"description":"test","steps":[{"actor":"client","cmd":` + tc.cmd + `}]}`
+			if err := json.Unmarshal([]byte(raw), &s); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			err := validateScenario(&s)
+			if tc.wantErr && err == nil {
+				t.Errorf("expected validateScenario to reject %q, got nil", tc.cmd)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("expected %q to pass validation, got %v", tc.cmd, err)
+			}
+		})
+	}
+}
+
 // TestLoadScenariosRealDir loads every conformance/scenarios/*.json this
 // repo actually ships (relative to this package's own file, so it works
 // regardless of the caller's working directory) and checks the count and

@@ -104,13 +104,14 @@ func LoadScenarios(dir string) ([]*Scenario, error) {
 	return out, nil
 }
 
-// validateScenario enforces the two step-shape rules docs/CONFORMANCE.md
-// section 3.2 documents but the unmarshalled struct alone can't: exactly one
-// of cmd/await/await_none per step (RunPair is a first-match if-chain, so a
-// step carrying more than one would silently drop everything after the
-// first match it hits -- e.g. an await_none combined with a cmd would never
-// run its negative assertion at all, a false PASS), and within_ms only
-// meaningful, and only bounded, alongside await_none. Every existing
+// validateScenario enforces the three step-shape rules docs/CONFORMANCE.md
+// sections 1.1 and 3.2 document but the unmarshalled struct alone can't:
+// exactly one of cmd/await/await_none per step (RunPair is a first-match
+// if-chain, so a step carrying more than one would silently drop everything
+// after the first match it hits -- e.g. an await_none combined with a cmd
+// would never run its negative assertion at all, a false PASS), a close
+// command's code only absent, 0 or 14 (APPLICATION_CLOSE), and within_ms
+// only meaningful, and only bounded, alongside await_none. Every existing
 // scenario has exactly one of cmd/await/await_none per step already (no
 // scenario relies on a step carrying both cmd and await), so this tightens
 // nothing that was previously load-bearing.
@@ -128,6 +129,18 @@ func validateScenario(s *Scenario) error {
 		}
 		if n != 1 {
 			return fmt.Errorf("step %d (actor %q): exactly one of cmd/await/await_none must be set, got %d", i, st.Actor, n)
+		}
+		// close is the one command whose fields the validator inspects: WIRE
+		// §2.8 allows an application exactly one connection-close code, and
+		// D-2026-09-25-01 dropped the code parameter from the SDK close API,
+		// so an adapter can no longer be expected to reject a bad one itself.
+		if cmd, _ := st.Cmd["cmd"].(string); cmd == "close" {
+			if code, ok := st.Cmd["code"]; ok {
+				f, isNum := code.(float64)
+				if !isNum || (f != 0 && f != 14) {
+					return fmt.Errorf("step %d (actor %q): close code must be absent, 0 or 14 (APPLICATION_CLOSE), got %v", i, st.Actor, code)
+				}
+			}
 		}
 		if st.WithinMs != nil {
 			if st.AwaitNone == nil {
