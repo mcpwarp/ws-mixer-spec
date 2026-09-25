@@ -59,33 +59,55 @@ that SDK, entirely independent of this runner.
 | Mode | Go plays | JS plays | Count |
 |---|---|---|---|
 | fixture | server (19 fixtures) + client (24 fixtures) | client (24 fixtures) | 43 (SDK, fixture) cells |
-| pair | server, client | client only | 9 scenarios × {go→go, go→js} = 18 cells |
+| pair | server, client | client only | 10 scenarios × {go→go, go→js} = 20 cells |
 
 All 43 `spec/fixtures/sequences/*.json` fixtures run against Go (19 `role:"server"` + 24
 `role:"client"`); the 24 `role:"client"` fixtures also run against JS (the JS SDK has no server),
-reported as `js-server` SKIPs for the 19 it can't play. All 9 pair scenarios run go→go and go→js
-(`drain_reconnect` and `application_close` need a client SDK with a reconnect loop of its own; an
-adapter whose SDK has none replies `unsupported` to `connect{reconnect:{enabled:true}}`, and that
-SDK's cells for those two scenarios are reported as SKIPs rather than FAILs — see "SDK changes
-made"). No orphan processes are left behind after a run (`pgrep -f 'adapter|runner|goserver'`
-empty). Each consumer repo's own `conformance/COUNTS.json` is the checked-in floor on passing cells
-(docs/CONFORMANCE.md section 5) — it, not this paragraph, is the source of truth for the exact
-current pass count.
+reported as `js-server` SKIPs for the 19 it can't play. All 10 pair scenarios run go→go and go→js
+(`drain_reconnect`, `application_close` and `application_close_client` need a client SDK with a
+reconnect loop of its own; an adapter whose SDK has none replies `unsupported` to
+`connect{reconnect:{enabled:true}}`, and that SDK's cells for those three scenarios are reported as
+SKIPs rather than FAILs — see "SDK changes made"). No orphan processes are left behind after a run
+(`pgrep -f 'adapter|runner|goserver'` empty). Each consumer repo's own `conformance/COUNTS.json` is
+the checked-in floor on passing cells (docs/CONFORMANCE.md section 5) — it, not this paragraph, is
+the source of truth for the exact current pass count.
 
 Pair scenarios (`conformance/scenarios/*.json`, excluding the `step-driving.json` sidecar):
 `happy_roundtrip`, `n_streams_fanout` (3 streams, open/write/half-close/respond/half-close),
 `app_roundtrip`, `half_close_sse`, `drain_with_inflight`, `big_stream_flow_control` (1 MiB single
 write, well over the default 262144-byte window — the ack only returns once several full
 credit-refill rounds have happened, which is the flow-control proof), `graceful_close`,
-`drain_reconnect` and `application_close` (the two scenarios that run with
-`connect.reconnect.enabled:true`): `drain_reconnect` -- server drains an in-flight stream; the JS
-client sees its connection close with GOING_AWAY/4012 and its own `MixerClient` reconnect loop
+`drain_reconnect`, `application_close` and `application_close_client` (the three scenarios that run
+with `connect.reconnect.enabled:true`): `drain_reconnect` -- server drains an in-flight stream; the
+JS client sees its connection close with GOING_AWAY/4012 and its own `MixerClient` reconnect loop
 redial automatically (the Go client does the same since v0.4.0), surfaced as a `reconnected` event;
 a fresh stream opened after that round-trips normally, proving the new connection is fully live
 rather than just re-established. `application_close` -- server closes with `APPLICATION_CLOSE`/4014,
 a code ws-mixer never emits itself; the client's reconnect loop treats it as non-fatal but starts at
 the backoff cap (WIRE.md section 2.9), so this scenario pins a small `reconnect.capMs`/`baseMs`
 (docs/CONFORMANCE.md section 1.1) to stay inside the runner's step timeout, and redials.
+`application_close_client` -- the mirror, D-2026-09-20-07: the CLIENT itself closes with
+`code:14`/`APPLICATION_CLOSE` on its own reconnecting connection, and its reconnect loop MUST NOT
+redial (CLIENT-SDK.md's Application close row: the close API must stop the loop, not just drop the
+socket underneath it). Asserted with `await_none` (docs/CONFORMANCE.md section 3.2), a negative
+assertion that fails if a `reconnected` (client side) or a fresh `connected` (server side) shows up
+within its window instead of passing by default — the shape a "did nothing happen" check needs, since
+plain `await` has no way to say "and then don't".
+
+`application_close_client` needs a client-side `Client.CloseWith`-equivalent on the reconnecting path in
+each SDK adapter (the Go adapter's is being added alongside this scenario, in `ws-mixer-go`, not in this
+repo), so it cannot be run from inside `ws-mixer-spec` alone. Once both adapters are built locally, the
+command to run just this scenario (mirroring the "narrow to one fixture/scenario" example above) is:
+
+```sh
+go run ./conformance/runner --spec-root . --adapters-dir /path/to/adapters \
+  --sdk go,js --mode pair --fixture application_close_client -v
+```
+
+Until then, `go build ./...` / `go vet ./...` / `go test ./...` at this repo's root (which includes the new
+`adapter.WaitAbsentTimeout` and `driver` package tests below) and a `conformance/runner --mode pair` dry run
+with no adapters (which loads and validates every `conformance/scenarios/*.json`, this one included, without
+executing any step) are what this repo can verify on its own.
 
 ## Decisions on `docs/CONFORMANCE.md` section 7's open questions
 
@@ -147,8 +169,8 @@ the backoff cap (WIRE.md section 2.9), so this scenario pins a small `reconnect.
   rare timing hiccup into a silent test hang rather than a fast, visible failure. Fixed three ways:
   the JS adapter's `connect()` call defaults to `reconnect: { maxAttempts: 0 }` (an adapter has no
   business auto-reconnecting mid-fixture by default — reconnect policy is explicitly out of the
-  adapter protocol's scope per section 1.3 unless a scenario opts in, which only `drain_reconnect`
-  does, via `connect.reconnect.enabled:true`); the floor/scale were both raised to give real IPC
+  adapter protocol's scope per section 1.3 unless a scenario opts in, which `drain_reconnect` and the
+  two `application_close*` scenarios do, via `connect.reconnect.enabled:true`); the floor/scale were both raised to give real IPC
   headroom; and the 300ms floor itself is no longer hardcoded independently inside each adapter —
   the runner sends it as `set_options.floor_ms` and both adapters clamp their own scaled durations
   to that value (falling back to 300 only if a run never sends one), so raising the floor again
@@ -270,6 +292,20 @@ the backoff cap (WIRE.md section 2.9), so this scenario pins a small `reconnect.
   reaches it, observing an already-reset stream instead of a clean abort. This is a bounded,
   accepted race, not a correctness bug — the alternative (an unbounded wait) would defeat RESET's
   own promptness guarantee.
+- **`await_none` (D-2026-09-20-07's conformance hook).** `conformance/runner/adapter/adapter.go` gained
+  `Adapter.WaitAbsentTimeout(pred, window) (Event, bool, error)`, `WaitFor`'s negation: it watches for `window`
+  and reports whether an unconsumed matching event showed up, but — unlike `WaitFor` — never blocks past
+  `window` (there's nothing to wait "until") and never marks a match consumed, whether one is found or not,
+  so a passing `await_none` can't swallow an event a later step in the same scenario still needs.
+  `conformance/runner/driver/pair.go`'s `Scenario.Steps` gained `await_none`/`within_ms` fields
+  (`RunPair` treats a step as exactly one of `cmd`, `await`, or `await_none`); on a match it fails the
+  step, naming the offending event, via the same `fail()` helper every other step uses. Covered by
+  `adapter_test.go`'s `TestWaitAbsentTimeoutPasses`/`TestWaitAbsentTimeoutCatchesDelayedEvent`/
+  `TestWaitAbsentTimeoutDoesNotConsume` (the middle one needed `testdata/fakeadapter` to gain a test-only
+  `emit_after` command, since every other fake-adapter event is already sitting in the log by the time a
+  test can observe it, and the point here is a genuinely asynchronous arrival) and `driver/pair_test.go`'s
+  `TestScenarioParsesAwaitNone`/`TestEventMatchesForAwaitNone` (the `driver` package had no tests at all
+  before this).
 
 ## SDK changes made
 

@@ -1,0 +1,20 @@
+{
+  "description": "D-2026-09-20-07 / CLIENT-SDK.md's Application close row: the CLIENT calls its own application-close API (code 14 / APPLICATION_CLOSE) on a reconnecting client, and the reconnect loop MUST stop for good rather than redialing -- exactly one non-fatal disconnected on each side, then silence. This is the mirror of application_close.json (server-initiated 4014, where the client's reconnect loop is expected TO redial); here the initiator is the client itself, so redialing would mean the close API failed to reach the reconnect loop and merely dropped the socket underneath it. A short roundtrip first proves the connection was genuinely live before the client closes it. connect.reconnect.baseMs/capMs are pinned small (docs/CONFORMANCE.md section 1.1) only so a false-negative pass (an SDK that doesn't implement this yet and silently reconnects) would still show up fast rather than needing the runner's fixed 20s per-step timeout to expire on the first await; the await_none windows below (within_ms) are independent of these and set directly. The server's own initial `connected` (from the one connection RunPair's own setup makes) is never consumed by setup the way the client's is, so the first step below explicitly awaits and consumes it -- otherwise the later `await_none{event:\"connected\"}` would match that already-logged, unrelated event and fail immediately; consuming it up front means that await_none is really asserting 'no SECOND connected shows up'.",
+  "connect": { "reconnect": { "enabled": true, "baseMs": 50, "capMs": 300 } },
+  "steps": [
+    { "actor": "server", "await": { "event": "connected" } },
+
+    { "actor": "server", "cmd": { "cmd": "open_stream" } },
+    { "actor": "server", "await": { "event": "stream_opened", "id": 1 } },
+    { "actor": "client", "await": { "event": "stream_opened", "id": 1 } },
+    { "actor": "server", "cmd": { "cmd": "write", "id": 1, "data_b64": "cmVx" } },
+    { "actor": "client", "await": { "event": "data", "id": 1, "data_b64": "cmVx" } },
+
+    { "actor": "client", "cmd": { "cmd": "close", "code": 14, "message": "APP-BYE: client shutting down" } },
+    { "actor": "client", "await": { "event": "disconnected", "ws_code": 4014, "error_name": "APPLICATION_CLOSE", "fatal": false } },
+    { "actor": "server", "await": { "event": "disconnected" } },
+
+    { "actor": "client", "await_none": { "event": "reconnected" }, "within_ms": 1500 },
+    { "actor": "server", "await_none": { "event": "connected" }, "within_ms": 1500 }
+  ]
+}

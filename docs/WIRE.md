@@ -41,7 +41,7 @@ User-Agent: ws-mixer-py/0.2.0 (python/3.12 linux)
 |---|---|
 | Subprotocol | Client MUST offer `ws-mixer.v1`. Server MUST echo exactly one offered token. **If the 101 response omits the header, the client MUST fail and NOT retry** — it means a proxy or the wrong endpoint answered. |
 | No overlap | Server fails the upgrade with **HTTP 400** + JSON body. Never 101-then-close. |
-| Auth | `Authorization: Bearer <token>` is required, and `hello.token` MUST be present and equal to it. Bad/absent → **HTTP 401**, no 101. |
+| Auth | `Authorization: Bearer <token>` is required, and `hello.token` MUST be present and equal to it. Bad/absent **at the upgrade** → **HTTP 401**, no 101. A token rejected at the `hello` re-check, after the 101 (e.g. it expired between the upgrade and `hello`, or the server only validates there) → `error{UNAUTHORIZED}` + close **4011**, no `welcome`. §2.9's Reconnect table treats the two identically. |
 | Forbidden | Token in `Sec-WebSocket-Protocol` (collides with version negotiation, gets echoed back). Token in the query string (lands in every access log). |
 | Opcode | **Binary (0x2) always.** A text frame is a connection `PROTOCOL_ERROR`. |
 | Compression | `permessage-deflate` MUST be disabled on both ends. |
@@ -430,7 +430,9 @@ close handshake:
 
 Both, because the close reason is far too short to be useful and browsers surface it inconsistently — but it
 survives when the stream-0 message is lost in the race. **A peer MUST be able to act on the close code
-alone**, with no `error` message preceding it.
+alone**, with no `error` message preceding it — this is what lets a client-SDK derive `errorCode`/`errorName`
+straight off a bare close in `4001`–`4999` via the mechanical `ws_close = 4000 + code` rule above; see
+[CLIENT-SDK.md](./CLIENT-SDK.md)'s Disconnect reason shape row.
 
 ### 2.9 Sequences
 
@@ -446,7 +448,7 @@ sequenceDiagram
     C->>S: DATA(0) {"t":"hello","v":1,…}
     Note over S: auth re-check, app validates hello.meta
     S-->>C: DATA(0) {"t":"welcome","session":…,"ping_interval":30000,…}
-    Note over C: reset backoff counter HERE, nowhere else
+    Note over C: start the stability timer — attempt is NOT reset here
     S->>C: OPEN(1) · DATA(1) · CLOSE(1)
     C->>S: DATA(1) · WINDOW(1) · CLOSE(1)
 ```
@@ -548,29 +550,52 @@ enough and must be set explicitly.
 |---|---|
 | `drain` received | new connection **immediately and in parallel**, before the old one closes. Jitter `random(0, 2000) ms` only |
 | close `4012` with no preceding `drain` | reconnect immediately, same jitter |
-| close `4013 KEEPALIVE_TIMEOUT` | one immediate attempt, then normal backoff |
-| close `4014 APPLICATION_CLOSE` | **not fatal**; start at `cap` (delay = random(0, cap)) — an application close is a deliberate server-side decision made after `welcome`, where the attempt counter has just been reset and normal backoff would never climb; an SDK MUST NOT treat it as a protocol failure |
+| close `4013 KEEPALIVE_TIMEOUT` | one immediate attempt, then normal backoff. This one-immediate-attempt budget re-arms only once the connection reaches **stability** (below) — a server that welcomes and immediately drops the link does not get a fresh budget every cycle |
+| close `4014 APPLICATION_CLOSE` | **not fatal**; start at `cap` (delay = random(0, cap)), regardless of where `attempt` currently sits — an application close is a deliberate, post-`welcome` refusal, and start-at-cap is how the SDK signals "back off hard now" even on the very first occurrence; an SDK MUST NOT treat it as a protocol failure |
 | close `1006` / TCP reset / DNS failure / HTTP 5xx | normal backoff (429: honour `Retry-After`) |
+| provider call fails with its SDK-defined temporary-failure marker (Go: wraps `ErrTokenUnavailable`; JS: `TokenUnavailableError`) | same as the row above: `phase: "dial"`, normal backoff, counts as a failed attempt against the same `attempt`/stability/bounded-retry rules — no immediate retry. An unmarked provider failure is not this row; see CLIENT-SDK.md's Provider failure row |
 | close `4001` / `4003` / `4004` | normal backoff **and a loud developer-facing error** — these mean an SDK bug and a silent retry loop hides it |
-| close `4009` | start at `cap`; honour `retry_after_ms` |
-| close `4010`, `4011`; HTTP 401/403/404; missing subprotocol echo | **fatal — never reconnect.** Surface and exit |
+| close `4009` | start at `cap`; honour `retry_after_ms` — same "refused on purpose" signal as `4014`, independent of `attempt` |
+| HTTP `401` on the upgrade, or close `4011` **before `welcome`** | `token` is a provider (callback): call it once more, redial immediately, no backoff; a second rejection (either form) is fatal. This one-refresh budget re-arms only once a connection reaches stability (below) — never on a `welcome` alone, so a server that welcomes and immediately closes cannot mint a fresh refresh every cycle. `token` is a static string: fatal on the first rejection — no retry, no backoff loop (the same token cannot start working, and retrying forever hammers the auth service and hides the real problem from the user) |
+| close `4011` **after `welcome`** | **fatal — never reconnect.** Unaffected by the row above — a token accepted once cannot be silently refreshed after the session it authorized is already running |
+| close `4010`; HTTP `403`, HTTP `404`; missing subprotocol echo | **fatal — never reconnect.** Surface and exit |
 | any other **4xxx** close code, including `4002` and codes unknown to this version | normal backoff (a locally initiated close is not a reconnect trigger at all) |
 
 ```
 delay = random(0, min(cap, base * 2^attempt))     # AWS "full jitter"
-base = 1000 ms    cap = 60000 ms    connect timeout 10 s
-attempt resets ONLY on `welcome` — never on TCP connect and never on the 101
+base = 1000 ms    cap = 60000 ms    stable = 10000 ms    connect timeout 10 s
+attempt resets only once the connection has been STABLE — stayed up `stable` ms past `welcome` —
+never on TCP connect, never on the 101, and not on `welcome` itself
+a bounded retry count N (optional, SDK-exposed) counts against this same attempt, not a separate total
 ```
 
-Resetting on the 101 gives a hot loop against a server that accepts and immediately closes. `cap` is 60 s
-rather than gRPC's 120 s because a dead tunnel means the user's MCP server is unreachable from Claude, and
-two minutes of dead time on a developer tool is user-visible.
+Resetting on the 101 gives a hot loop against a server that accepts and immediately closes. The same hot
+loop exists one step later: a server that sends `welcome` and then closes resets the counter every cycle
+too, so the client would redial about once a second forever. The counter therefore resets only once the
+connection has been stable — stayed up for `stable` ms after `welcome`. A connection that ends sooner leaves
+`attempt` exactly where it was, so the delay keeps climbing. `cap` is 60 s rather than gRPC's 120 s because
+a dead tunnel means the user's MCP server is unreachable from Claude, and two minutes of dead time on a
+developer tool is user-visible.
 
-A close that arrives after `welcome` always sees `attempt` freshly reset to 0, which is why the codes that
-signal a deliberate post-`welcome` refusal (`4009`, `4014`) start at `cap` instead of normal backoff — normal
-backoff's `base * 2^attempt` would otherwise never climb past its first, near-zero step. This start-at-cap
-treatment applies only to a `4009`/`4014` received after `welcome`; one received before `welcome` (`attempt`
-never having been reset) uses normal backoff instead, same as any other pre-`welcome` failure.
+`4009` and `4014` still start at `cap` on their very first post-`welcome` occurrence — not because
+start-at-cap is needed to make backoff climb (it no longer is: `attempt` may already be high if this is a
+rapid welcome/close cycle), but because it is an explicit "refused on purpose" signal a server sends when it
+wants the client to back off hard immediately, independent of whatever `attempt` currently holds. This
+treatment applies only to a `4009`/`4014` received after `welcome` — a deliberate refusal from a session that
+was actually accepted; one received before `welcome` is a handshake-time failure like any other and uses
+normal backoff instead. The other once-only budgets in this table — the token-provider's one-refresh-retry
+above, and `4013`'s one-immediate-attempt — are likewise re-armed at stability rather than at `welcome`, for
+the same reason: a budget re-armable by a mere `welcome` is re-armable by a server that welcomes and
+immediately closes. This timer is per connection: a drain hand-over (above) starts a new connection in
+parallel before the old one closes, and the old connection's own eventual close does not cancel the new
+connection's stability timer — each connection arms, and can only cancel, its own. Drain-driven reconnects
+(immediate, jitter `0–2000 ms`) are untouched by any of this — they are not governed by `attempt` at all.
+
+An SDK that offers a bounded retry count `N` counts against this same `attempt` — consecutive reconnects
+since the last stable connection — and goes fatal when the `N`th such reconnect fails, exactly like an SDK
+that never connects at all. This spec stays language-neutral about it deliberately: how "unlimited" and "no
+reconnect at all" are each expressed (a sentinel value, a separate flag, a distinct enum, ...) is SDK-defined,
+not part of the wire contract.
 
 **In-flight streams are lost on reconnect. There is no resumption.** Ids restart at 1; there is no continuity
 of ids, buffers or credit. A handler must be able to tell "the response ended" (EOF) from "the tunnel died"
@@ -589,7 +614,7 @@ connections per user for paid tiers instead. ws-mixer supplies the mechanism; it
 ### 2.10 Python implementer checklist
 
 1. `websockets.connect(url, subprotocols=["ws-mixer.v1"], additional_headers={"Authorization": f"Bearer {token}"}, compression=None, max_size=65544, ping_interval=20, ping_timeout=None)`; assert `ws.subprotocol == "ws-mixer.v1"` or fail **fatally**.
-2. Send `hello`; await the first stream-0 message with a 10 s timeout; validate it is `welcome`; check `ping_interval ≥ 5000` and `ping_timeout ≥ 2 × ping_interval`; store `session`, `window`, `min(max_streams)`. **Reset the backoff counter here and nowhere else.**
+2. Send `hello`; await the first stream-0 message with a 10 s timeout; validate it is `welcome`; check `ping_interval ≥ 5000` and `ping_timeout ≥ 2 × ping_interval`; store `session`, `window`, `min(max_streams)`. Start the `stable`-ms stability timer here. **Reset the backoff counter only when that timer fires — never at `welcome` itself.**
 3. **Read loop**: unpack `>BBHI`; dispatch on type; **never await application code**.
 4. On DATA: `len > recv_window[id]` → connection error; else append to the buffer and `recv_window[id] -= len`.
 5. **Write task** (one): drain the control deque first, then round-robin one ≤16 KiB DATA chunk per ready stream. `await ws.send(...)` is your backpressure.
@@ -598,9 +623,9 @@ connections per user for paid tiers instead. ws-mixer supplies the mechanism; it
 8. On app write: wait for `send_window > 0`, send `min(len, send_window, 16384)`, decrement.
 9. Implement the 5×5 state table (§2.5) longhand. Any conn-error cell → `error` on stream 0, WS close `4000 + code`, done.
 10. Keep `highest_opened`; **id > highest_opened and not OPEN → connection error**; **id ≤ highest_opened with no live stream → discard, count, debug log**.
-11. Remember: **CLOSE delivers the buffer then EOF; RESET drops it.**
-12. Control dispatcher, a `match` on `t`: `ping`→`pong` at the **head** of the control queue · `pong`→ unknown id is a conn error, else record `last_pong_at`/RTT · `drain`→ stop expecting OPEN, start reconnecting now, arm the deadline timer · `error`→ log loudly, close, **never reply** · `app`→ hand `body` to the application · `hello`/`welcome` after the handshake → conn error · unknown `t` → conn error naming the string.
-13. Three timers, that is all: ping (first sleep `random(0, interval)`), watchdog (`now - last_pong_at > ping_timeout` → `error{KEEPALIVE_TIMEOUT}` + close 4013), handshake timer (cancelled by `welcome`).
+11. Remember: **CLOSE delivers the buffer then EOF; RESET drops it.** When the connection itself dies instead — any reason other than that stream's own CLOSE, abnormal closure included — every still-open stream owes its reader/writer an error instead, never a clean EOF (CLIENT-SDK.md's Stream teardown on disconnect row).
+12. Control dispatcher, a `match` on `t`: `ping`→`pong` at the **head** of the control queue · `pong`→ unknown id is a conn error, else record `last_pong_at`/RTT · `drain`→ stop expecting OPEN, start reconnecting now, arm the deadline timer · `error`→ log loudly, close, **never reply** · `app`→ hand `body` to the application (an `app` already dequeued before a following `error` is still owed to it, CLIENT-SDK.md's Handler delivery row) · `hello`/`welcome` after the handshake → conn error · unknown `t` → conn error naming the string.
+13. Four timers, that is all: ping (first sleep `random(0, interval)`), watchdog (`now - last_pong_at > ping_timeout` → `error{KEEPALIVE_TIMEOUT}` + close 4013), handshake timer (cancelled by `welcome`), stability timer — **one per connection** (armed at that connection's own `welcome`, cancelled if that same connection ends before it fires; a drain hand-over's old connection closing does NOT cancel the new connection's timer; on firing, resets the backoff counter and re-arms the once-only budgets above).
 14. On SIGINT/SIGTERM: `drain{reason:"client_requested"}`, wait up to 5 s, `error{NO_ERROR}`, close 1000.
     Expose that same close path with an arbitrary code too, so an application can close with
     `APPLICATION_CLOSE` (14 / 4014) instead of `NO_ERROR`.

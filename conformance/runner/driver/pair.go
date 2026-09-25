@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/mcpwarp/ws-mixer-spec/conformance/runner/adapter"
 )
@@ -43,8 +44,31 @@ type Scenario struct {
 		Actor string         `json:"actor"` // "server" | "client"
 		Cmd   map[string]any `json:"cmd,omitempty"`
 		Await map[string]any `json:"await,omitempty"`
+		// AwaitNone is a negative assertion (docs/CONFORMANCE.md section 3.2):
+		// the step passes if NO event matching it arrives on Actor within
+		// WithinMs (default defaultAwaitNoneMs), and fails, naming the
+		// offending event, if one does. Mutually exclusive with Cmd/Await.
+		AwaitNone map[string]any `json:"await_none,omitempty"`
+		// WithinMs is a pointer so an explicit `"within_ms": 0` in the JSON
+		// (nonsensical -- a zero-width window is not a legal negative-assertion
+		// wait, and it's not "absent" either) is distinguishable from the field
+		// being omitted entirely: nil means absent (RunPair falls back to
+		// defaultAwaitNoneMs), a non-nil *WithinMs <= 0 is a load-time error
+		// (validateScenario), same as any other out-of-range value. A plain
+		// `int` with `omitempty` could not tell "0" from "absent" and would
+		// silently let an explicit 0 both skip validation (the "only alongside
+		// await_none" rule) and fall through to the 1500ms default.
+		WithinMs *int `json:"within_ms,omitempty"`
 	} `json:"steps"`
 }
+
+// defaultAwaitNoneMs is the window an await_none step waits out when the
+// scenario doesn't set within_ms -- long enough to catch a reconnect loop
+// that fires on the SDK's own minimum backoff tick, short enough not to
+// make a passing scenario slow. Not time-scaled: like connect.reconnect's
+// baseMs/capMs (section 1.1), this bounds real wall-clock SDK-internal
+// timing, not a wire-protocol duration --time-scale governs.
+const defaultAwaitNoneMs = 1500
 
 // LoadScenarios loads every *.json in dir except step-driving.json (which is
 // fixture-mode's sidecar, not a scenario).
@@ -72,9 +96,61 @@ func LoadScenarios(dir string) ([]*Scenario, error) {
 			return nil, fmt.Errorf("%s: %w", n, err)
 		}
 		s.Name = n[:len(n)-len(filepath.Ext(n))]
+		if err := validateScenario(&s); err != nil {
+			return nil, fmt.Errorf("%s: %w", n, err)
+		}
 		out = append(out, &s)
 	}
 	return out, nil
+}
+
+// validateScenario enforces the two step-shape rules docs/CONFORMANCE.md
+// section 3.2 documents but the unmarshalled struct alone can't: exactly one
+// of cmd/await/await_none per step (RunPair is a first-match if-chain, so a
+// step carrying more than one would silently drop everything after the
+// first match it hits -- e.g. an await_none combined with a cmd would never
+// run its negative assertion at all, a false PASS), and within_ms only
+// meaningful, and only bounded, alongside await_none. Every existing
+// scenario has exactly one of cmd/await/await_none per step already (no
+// scenario relies on a step carrying both cmd and await), so this tightens
+// nothing that was previously load-bearing.
+func validateScenario(s *Scenario) error {
+	for i, st := range s.Steps {
+		n := 0
+		if st.Cmd != nil {
+			n++
+		}
+		if st.Await != nil {
+			n++
+		}
+		if st.AwaitNone != nil {
+			n++
+		}
+		if n != 1 {
+			return fmt.Errorf("step %d (actor %q): exactly one of cmd/await/await_none must be set, got %d", i, st.Actor, n)
+		}
+		if st.WithinMs != nil {
+			if st.AwaitNone == nil {
+				return fmt.Errorf("step %d (actor %q): within_ms is only valid alongside await_none", i, st.Actor)
+			}
+			ms := *st.WithinMs
+			if ms <= 0 {
+				return fmt.Errorf("step %d (actor %q): within_ms must be > 0, got %d", i, st.Actor, ms)
+			}
+			// Compare as plain ints, before any conversion to time.Duration:
+			// an absurdly large within_ms (bigger than time.Duration's own
+			// range in ms, or just bigger than int64 nanoseconds / 1e6) would
+			// overflow int64 nanoseconds on the ms*time.Millisecond multiply
+			// and could wrap negative, which would pass a ">" ceiling check
+			// performed on the (already-overflowed) Duration and silently
+			// turn the negative assertion into a near-instant no-op instead
+			// of the rejection this check exists to give.
+			if ceilingMs := int(defaultTimeout / time.Millisecond); ms > ceilingMs {
+				return fmt.Errorf("step %d (actor %q): within_ms %dms exceeds the runner's per-step timeout (%v = %dms) -- an await_none can never legitimately need longer than one step is allowed to take", i, st.Actor, ms, defaultTimeout, ceilingMs)
+			}
+		}
+	}
+	return nil
 }
 
 // RunPair drives one scenario across two already-spawned, already-`ready`
@@ -185,7 +261,22 @@ func RunPair(ctx context.Context, s *Scenario, srv, cli *adapter.Adapter, timing
 			_ = ev
 			continue
 		}
-		return fail("step %d: neither cmd nor await set", i)
+		if st.AwaitNone != nil {
+			windowMs := defaultAwaitNoneMs
+			if st.WithinMs != nil {
+				windowMs = *st.WithinMs
+			}
+			window := time.Duration(windowMs) * time.Millisecond
+			ev, found, err := target.WaitAbsentTimeout(func(e adapter.Event) bool { return eventMatches(e, st.AwaitNone) }, window)
+			if err != nil {
+				return fail("step %d (%s await_none %v): %v", i, st.Actor, st.AwaitNone, err)
+			}
+			if found {
+				return fail("step %d (%s await_none %v): observed %+v within %v", i, st.Actor, st.AwaitNone, ev.Raw, window)
+			}
+			continue
+		}
+		return fail("step %d: neither cmd, await, nor await_none set", i)
 	}
 
 	res.Status = "PASS"

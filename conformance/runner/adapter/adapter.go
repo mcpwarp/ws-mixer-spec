@@ -297,6 +297,72 @@ func (a *Adapter) WaitForTimeout(pred func(Event) bool, timeout time.Duration) (
 	return a.WaitFor(ctx, pred)
 }
 
+// WaitAbsentTimeout is WaitFor's negation: it watches for window and reports
+// whether an unconsumed event matching pred showed up in that time. Unlike
+// WaitFor it never blocks past window (there is nothing to wait "until" when
+// the whole point is proving absence), and unlike WaitFor it never marks a
+// matching event consumed -- on a pass there was nothing to consume, and on
+// a violation the caller fails the scenario immediately, so leaving the
+// event in place keeps it visible in Events()/Stderr() dumps for debugging
+// rather than silently swallowing it. A pred that never matches leaves every
+// other pending WaitFor call on this adapter completely unaffected: this
+// call only reads the log, it never advances a cursor other calls share.
+//
+// Three outcomes, mirroring WaitFor's own dead-adapter handling:
+//   - (ev, true, nil): a matching event was observed -- the negative
+//     assertion is violated.
+//   - (Event{}, false, nil): the window elapsed with the adapter still alive
+//     and nothing matching arrived -- a genuine pass.
+//   - (Event{}, false, err): the adapter exited -- before this call even
+//     started, or partway through the window -- without ever producing a
+//     matching event. This is deliberately NOT the same as a pass: a
+//     negative assertion proves "nothing happened" only by watching a live
+//     process for the whole window, and a dead process proves nothing at
+//     all (docs/CONFORMANCE.md section 3.2) -- e.g. an SDK that crashes
+//     right after an application close would otherwise turn
+//     application_close_client.json's trailing await_none steps into a
+//     trivial PASS instead of the FAIL a crash deserves. err is the
+//     adapter's own read error when it has one, else the same
+//     "exited without emitting a matching event" shape WaitFor uses.
+func (a *Adapter) WaitAbsentTimeout(pred func(Event) bool, window time.Duration) (Event, bool, error) {
+	deadline := time.Now().Add(window)
+	for {
+		a.mu.Lock()
+		for i := 0; i < len(a.events); i++ {
+			if a.consumed[i] {
+				continue
+			}
+			if pred(a.events[i]) {
+				ev := a.events[i]
+				a.mu.Unlock()
+				return ev, true, nil
+			}
+		}
+		if a.closed {
+			readErr := a.readErr
+			a.mu.Unlock()
+			if readErr != nil {
+				return Event{}, false, readErr
+			}
+			return Event{}, false, fmt.Errorf("adapter %s exited before the await_none window (%v) elapsed, without emitting a matching event -- a negative assertion cannot pass against a dead process", a.Name, window)
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			a.mu.Unlock()
+			return Event{}, false, nil
+		}
+		ch := make(chan struct{})
+		a.waiters = append(a.waiters, ch)
+		a.mu.Unlock()
+
+		select {
+		case <-ch:
+		case <-time.After(remaining):
+			return Event{}, false, nil
+		}
+	}
+}
+
 // SendAndAck sends cmd and waits for its ack{seq} (or an error{seq}, which
 // is returned as an error).
 func (a *Adapter) SendAndAck(name string, args map[string]any, timeout time.Duration) (Event, error) {
