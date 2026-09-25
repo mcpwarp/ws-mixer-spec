@@ -387,7 +387,7 @@ token (e.g. `CONNECTION_LIMIT: over per-tenant cap`). A real trap: application e
 for `code ≤ 0x3e7` (999); codes `>= 0x1000_0000` additionally don't even fit the 16-bit close-code field.
 Those codes remain usable for stream `RESET` only; a connection close needs `APPLICATION_CLOSE` (`0x0e` /
 4014) instead, with the real reason carried in `error.message` and the close reason. This applies whether
-the unmappable code is the SDK's own caller's or a peer's `error.code` it is closing on: an SDK MUST NOT
+the unmappable code is a peer's or ws-mixer's own `error.code` it is closing on: an SDK MUST NOT
 attempt an illegal close code (WebSocket libraries respond by sending no close frame at all, or by
 throwing, leaving the peer a bare `1006`). It sends WS close `4002` (`INTERNAL_ERROR`'s close code) instead,
 while `error.code` still carries the real, unclamped code.

@@ -177,7 +177,7 @@ both SDKs could end a stream cleanly — or, in Go, hang a `Read` — when the t
   the welcome timeout (`PROTOCOL_ERROR`), any other local protocol-violation failure of the connection, and a
   missing/mismatched subprotocol echo on the upgrade, which the SDK classifies `UNSUPPORTED` even though
   there is neither a close code nor an HTTP status to derive it from; (4) the SDK's own application-close call
-  (`D-2026-09-20-01`'s `APPLICATION_CLOSE`) — `errorCode` is the caller's own code, `errorName` is
+  (`D-2026-09-20-01`'s `APPLICATION_CLOSE`) — `errorCode` is always `14`, `errorName` is always
   `APPLICATION_CLOSE`. `errorCode`/`errorName` are still never
   synthesised for anything that isn't a ws-mixer code: an HTTP upgrade rejection is `httpStatus` alone, and an
   abnormal closure (`1006`/no close frame) or any other non-ws-mixer close code carries neither. Found during
@@ -201,3 +201,19 @@ both SDKs could end a stream cleanly — or, in Go, hang a `Read` — when the t
   Go, hang a pending `Read` forever — when the tunnel died without a close frame, because neither guarantee
   was written down anywhere for either SDK to implement against. See [`CLIENT-SDK.md`](./CLIENT-SDK.md),
   [`WIRE.md`](./WIRE.md#29-sequences).
+
+## 2026-09-25
+
+Project owner's approval. `D-2026-09-25-01` came out of the v0.4.0 conformance review; approved by Anatoly.
+
+- **D-2026-09-25-01** — The application-close API takes a message only, never a caller-supplied error code:
+  it always closes with `APPLICATION_CLOSE` (`0x0e`/4014). [WIRE.md §2.8](./WIRE.md#28-error-codes) makes
+  `APPLICATION_CLOSE` the only code an application may close a *connection* with; a caller-supplied code would
+  let a healthy connection close with a protocol-fault code, and produce an `errorCode`/`errorName` pair that
+  isn't in §2.8's table at all. This applies to both the client and server SDK close APIs — §2.8 lets either
+  side's application use `APPLICATION_CLOSE` — and the harness `close` command's `0`/`14` restriction covers
+  both roles. Changed: `CLIENT-SDK.md`'s Application close row, source (4) of the Disconnect reason shape row,
+  and the `wsCode` row; `WIRE.md` §2.8's clamp sentence; `CONFORMANCE.md`'s `close` command row and §6 step 5;
+  `D-2026-09-20-09`'s source (4). The harness `close` command keeps its `code` field for compatibility but
+  accepts only `0`/absent or `14`. See [`CLIENT-SDK.md`](./CLIENT-SDK.md), [`WIRE.md`](./WIRE.md#28-error-codes),
+  [`CONFORMANCE.md`](./CONFORMANCE.md).
