@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -255,17 +256,9 @@ func main() {
 
 	report.PrintTable(os.Stdout, results)
 
-	// The COUNTS.json floor is a guard against regressing the full matrix; a
-	// filtered run (--sdk, --fixture, or a non-"all" --mode, which narrows
-	// which scenarios/fixtures can appear at all) only ever produces a
-	// subset of that matrix's results, so checking it here would either
-	// false-fail on a deliberately narrow run or silently pass a floor it
-	// never actually exercised. Only check it on a genuinely unfiltered run.
-	if *sdkFilter == "" && *fixtureGlob == "*" && *mode == "all" {
-		if err := checkCounts(countsPath, results); err != nil {
-			fmt.Fprintln(os.Stderr, "conformance runner:", err)
-			os.Exit(1)
-		}
+	if err := enforceCounts(os.Stderr, countsPath, *countsFlag == "", *sdkFilter, *mode, *fixtureGlob, results); err != nil {
+		fmt.Fprintln(os.Stderr, "conformance runner:", err)
+		os.Exit(1)
 	}
 
 	if *reportPath != "" {
@@ -400,6 +393,33 @@ func runOnePair(ctx context.Context, s *driver.Scenario, srvName, srvPath, cliNa
 		fmt.Fprintln(os.Stderr, res.Detail)
 	}
 	return res
+}
+
+// enforceCounts decides whether this invocation's flags allow the COUNTS.json
+// floor to be checked, and checks it. sdkFilter and mode deliberately never
+// gate the check: they only decide which keys produce rows at all, and
+// checkCounts already ignores a key with no rows, so a narrowed run is held
+// to the floor of exactly the keys it exercised. --fixture is the exception:
+// a glob other than "*" leaves an exercised key with only a subset of its
+// rows against a floor sized for all of them, so the check is skipped with a
+// note on w. A missing counts file is tolerated, with a note on w, only when
+// the path was defaulted (not given via --counts) -- this repo ships none,
+// and a run from inside it must not fail for that; an explicit --counts that
+// doesn't exist is an error, even when --fixture narrows the run.
+func enforceCounts(w io.Writer, path string, defaulted bool, sdkFilter, mode, fixtureGlob string, results []driver.Result) error {
+	_, statErr := os.Stat(path)
+	missing := os.IsNotExist(statErr)
+	switch {
+	case missing && defaulted:
+		fmt.Fprintf(w, "conformance runner: no COUNTS.json at %s; floor not checked\n", path)
+		return nil
+	case missing:
+		return checkCounts(path, results)
+	case fixtureGlob != "*":
+		fmt.Fprintf(w, "conformance runner: --fixture %q narrows the run; COUNTS.json floor not checked\n", fixtureGlob)
+		return nil
+	}
+	return checkCounts(path, results)
 }
 
 // checkCounts loads conformance/COUNTS.json -- a checked-in floor on the

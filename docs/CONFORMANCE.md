@@ -353,7 +353,7 @@ for the common case of running it from inside this repo:
 |---|---|---|
 | `--spec-root <dir>` | walk up from cwd looking for `spec/fixtures/sequences` | root containing `spec/fixtures/` and `conformance/scenarios/` |
 | `--adapters-dir <dir>` | `<spec-root>/conformance/adapters` | directory containing one subdirectory per SDK adapter |
-| `--counts <path>` | `<spec-root>/conformance/COUNTS.json` | the pass-count floor file (§3.5) |
+| `--counts <path>` | `<spec-root>/conformance/COUNTS.json` | the pass-count floor file (§3.5), checked on every run for the keys that run produced rows for (skipped, with a note, when `--fixture` narrows the set); a missing file is an error when the path was given explicitly, even with `--fixture`, and a stderr note when defaulted |
 | `--adapter name=path` | — | override discovery for one SDK with an already-built binary (repeatable, comma-separated) |
 
 An SDK repo's CI does not check out this repo's `conformance/adapters/` at all (it doesn't exist there
@@ -414,7 +414,9 @@ lacked:
 5. Fail the job on a non-zero exit. **A SKIP does not fail; a drop in the PASS count does** — the runner
    checks the invoking repo's `--counts` file (a checked-in floor, same trick as `spec/fixtures/COUNTS.json`)
    and fails if the number of passing (SDK, fixture) cells falls below it. That is what stops "adapter got
-   deleted, CI went green".
+   deleted, CI went green". The check runs even when `--sdk`/`--mode` narrow the run, against every key
+   the run produced rows for (keys it never exercised are ignored); only a `--fixture` glob other than
+   `*` skips it, since each key would then see a subset of the rows its floor was sized for.
 
 ---
 

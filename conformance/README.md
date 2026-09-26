@@ -484,8 +484,9 @@ concrete pointers from having actually built the other two adapters:
   (`docs/CONFORMANCE.md` section 1.2). It's additive — the runner ignores unknown fields — but
   keep it for consistency across SDKs.
 - `conformance/COUNTS.json` (docs/CONFORMANCE.md section 5's CI pass-count floor) exists and is
-  enforced on every unfiltered run; bump its `js-client`/`go-client`/etc. floors once Python starts
-  passing cells, per its own `checkCounts` doc comment in `main.go`.
+  enforced on every run without a `--fixture` glob, for the keys that run exercised; bump its
+  `js-client`/`go-client`/etc. floors once Python starts passing cells, per its own `checkCounts`
+  doc comment in `main.go`.
 
 ## Gaps
 
@@ -493,5 +494,5 @@ Being direct about what's incomplete, beyond what's already called out inline ab
 
 - **No `.github/workflows/conformance.yml` yet.** `conformance/COUNTS.json` (the pass-count floor,
   docs/CONFORMANCE.md section 5) exists and is enforced by `main.go`'s `checkCounts` on every
-  unfiltered run; wiring an actual CI workflow around `make conformance` is still open.
+  run without a `--fixture` glob, for the keys that run exercised; wiring an actual CI workflow around `make conformance` is still open.
 - **Python adapter**: not started (out of scope here; see the checklist above).
