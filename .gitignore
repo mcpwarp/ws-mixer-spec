@@ -1,0 +1,7 @@
+# go build -o build/... output (conformance runner and adapter binaries) and
+# the runner's --report JUnit XML.
+/build/
+
+*.test
+*.out
+*.prof
