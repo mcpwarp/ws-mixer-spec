@@ -220,7 +220,8 @@ Project owner's approval. `D-2026-09-25-01` came out of the v0.4.0 conformance r
 
 ## 2026-10-13
 
-`D-2026-10-13-01` is driven by browser-class client SDK runtimes, which cannot set upgrade headers at all.
+Project owner's approvals. `D-2026-10-13-01` is driven by browser-class client SDK runtimes, which cannot set
+upgrade headers at all; `D-2026-10-13-02` was found while bringing ws-mixer-server up against Zotero.
 
 - **D-2026-10-13-01** — The `Authorization` header on the upgrade becomes optional; `hello.token` stays
   required. A client sends `Authorization: Bearer <token>` whenever its runtime can set it; a server MUST accept
@@ -237,3 +238,17 @@ Project owner's approval. `D-2026-09-25-01` came out of the v0.4.0 conformance r
   `WIRE.md` §2.1's Auth row and request example, §2.7's `hello.token` field row, §2.9's handshake diagram;
   `CLIENT-SDK.md` gains a Token on the upgrade row; the control schemas' `token` description. See
   [`WIRE.md`](./WIRE.md#21-websocket-handshake), [`CLIENT-SDK.md`](./CLIENT-SDK.md).
+- **D-2026-10-13-02** — A server MUST NOT reject an upgrade for its `Origin` value, including `null`, unless
+  its operator configured an `Origin` allowlist (deployment policy, outside this spec; a rejection there → HTTP
+  `403`, fatal per §2.9). Reason: cross-site WebSocket hijacking relies on an ambient browser credential
+  (a cookie) that the browser attaches to an attacker page's upgrade; `ws-mixer.v1` authenticates on
+  `hello.token` (and the `Authorization` header when present), which a hostile page cannot obtain, so an
+  origin check adds no protection against hijacking (the drive-by pre-`hello` sockets it would also have cut off
+  are bounded by §2.1's Auth-row SHOULD instead) and only answers real browser-class clients with HTTP `403`. Found in the
+  Zotero live test: Zotero's hidden chrome window sends `Origin: null` on the `wss` upgrade, and
+  ws-mixer-server's `coder/websocket` `Accept` defaulted to same-origin and rejected it; ws-mixer-server v0.5.1
+  fixes it. Node, Go and Rust SDK clients send no `Origin`, so SDK tests never exercised the check. The
+  conformance harness has no HTTP-upgrade-rejection path at all (`CONFORMANCE.md` §1.3), so `Origin: null`
+  acceptance is not conformance-tested either, which is why no SDK test hit it. Changed: `WIRE.md` §2.1 gains
+  an Origin row, and the browser-class note under its request example points at it. See
+  [`WIRE.md`](./WIRE.md#21-websocket-handshake), [`CONFORMANCE.md`](./CONFORMANCE.md).

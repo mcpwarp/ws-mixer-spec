@@ -37,13 +37,14 @@ Authorization: Bearer <token>
 User-Agent: ws-mixer-py/0.2.0 (python/3.12 linux)
 ```
 
-A browser-class client sends the same request without the `Authorization` line (see the Auth row below).
+A browser-class client sends the same request without the `Authorization` line and with an `Origin` line (see the Auth and Origin rows below).
 
 | Rule | Detail |
 |---|---|
 | Subprotocol | Client MUST offer `ws-mixer.v1`. Server MUST echo exactly one offered token. **If the 101 response omits the header, the client MUST fail and NOT retry** — it means a proxy or the wrong endpoint answered. |
 | No overlap | Server fails the upgrade with **HTTP 400** + JSON body. Never 101-then-close. |
 | Auth | `hello.token` is **always required**. The client SHOULD also send `Authorization: Bearer <token>` on the upgrade whenever its runtime can set request headers; browser-class runtimes (the browser `WebSocket` API, Electron renderers, Firefox-based hosts) cannot, and send none. A server MUST accept an upgrade with **no** `Authorization` header and authenticate on `hello.token` alone. When the header **is** present it MUST be a well-formed `Bearer <token>`, and `hello.token` MUST equal it. A malformed or rejected header **at the upgrade** → **HTTP 401**, no 101. A token rejected at the `hello` check, after the 101 (a `hello.token` that does not equal the header, or that the server rejects — e.g. it expired between the upgrade and `hello`, the server only validates there, or there was no header to validate earlier) → `error{UNAUTHORIZED}` + close **4011**, no `welcome`. §2.9's Reconnect table treats the two identically. A server that accepts header-less upgrades loses its cheap pre-upgrade reject for them and SHOULD bound how many un-authenticated sockets it holds before `hello` (the 10 s hello timer, §2.9, bounds how long each one lives). |
+| Origin | Browser-class runtimes send an `Origin` header — a browser page sends its page origin, Zotero's hidden chrome windows send `Origin: null`; non-browser clients send none. A server MUST NOT reject an upgrade for its `Origin` value, including `null`, unless its operator configured an `Origin` allowlist (deployment policy, outside this spec; a rejection there → **HTTP 403**, fatal per §2.9). Authentication is `hello.token` (and the `Authorization` header when present), never an ambient browser credential such as a cookie, so the cross-site WebSocket hijacking an origin check guards against gives an attacker nothing here; the drive-by pre-`hello` sockets it would also have cut off are bounded by the Auth row's SHOULD instead. |
 | Forbidden | Token in `Sec-WebSocket-Protocol` (collides with version negotiation, gets echoed back). Token in the query string (lands in every access log). |
 | Opcode | **Binary (0x2) always.** A text frame is a connection `PROTOCOL_ERROR`. |
 | Compression | `permessage-deflate` MUST be disabled on both ends. |
