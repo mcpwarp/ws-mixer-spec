@@ -31,7 +31,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "must equal the Authorization bearer token"
+          "description": "must equal the Authorization bearer token when the upgrade carried one; the sole credential when it did not"
         },
         "agent": {
           "type": "object",

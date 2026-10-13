@@ -217,3 +217,23 @@ Project owner's approval. `D-2026-09-25-01` came out of the v0.4.0 conformance r
   `D-2026-09-20-09`'s source (4). The harness `close` command keeps its `code` field for compatibility but
   accepts only `0`/absent or `14`. See [`CLIENT-SDK.md`](./CLIENT-SDK.md), [`WIRE.md`](./WIRE.md#28-error-codes),
   [`CONFORMANCE.md`](./CONFORMANCE.md).
+
+## 2026-10-13
+
+`D-2026-10-13-01` is driven by browser-class client SDK runtimes, which cannot set upgrade headers at all.
+
+- **D-2026-10-13-01** — The `Authorization` header on the upgrade becomes optional; `hello.token` stays
+  required. A client sends `Authorization: Bearer <token>` whenever its runtime can set it; a server MUST accept
+  an upgrade with no `Authorization` header and authenticate on `hello.token` alone. When the header is present
+  it must be a well-formed `Bearer <token>` (else HTTP `401`, as before) and `hello.token` must equal it (else
+  `error{UNAUTHORIZED}` + close `4011`, as before). A `hello` without a valid `token` field stays a malformed
+  `hello` (`PROTOCOL_ERROR`, §2.7's field table). No close code, HTTP status or other wire rule changes. Reason: the browser `WebSocket` API, Electron renderers and Firefox-based
+  hosts (e.g. a Zotero plugin) cannot set request headers on an upgrade, and §2.1's Forbidden row already rules
+  out the usual workarounds (token in the query string or in `Sec-WebSocket-Protocol`), so a mandatory header
+  shut those runtimes out of `ws-mixer.v1` entirely. Security is unchanged: every server already had to verify
+  `hello.token`, so the header was only ever a second copy of the same credential. The cost is on the server:
+  it loses its cheap pre-upgrade reject for header-less clients, holds an un-authenticated socket until `hello`
+  (bounded by the 10 s hello timer, §2.9), and so SHOULD bound how many such sockets it holds itself. Changed:
+  `WIRE.md` §2.1's Auth row and request example, §2.7's `hello.token` field row, §2.9's handshake diagram;
+  `CLIENT-SDK.md` gains a Token on the upgrade row; the control schemas' `token` description. See
+  [`WIRE.md`](./WIRE.md#21-websocket-handshake), [`CLIENT-SDK.md`](./CLIENT-SDK.md).

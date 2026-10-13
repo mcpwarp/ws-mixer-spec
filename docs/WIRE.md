@@ -37,11 +37,13 @@ Authorization: Bearer <token>
 User-Agent: ws-mixer-py/0.2.0 (python/3.12 linux)
 ```
 
+A browser-class client sends the same request without the `Authorization` line (see the Auth row below).
+
 | Rule | Detail |
 |---|---|
 | Subprotocol | Client MUST offer `ws-mixer.v1`. Server MUST echo exactly one offered token. **If the 101 response omits the header, the client MUST fail and NOT retry** — it means a proxy or the wrong endpoint answered. |
 | No overlap | Server fails the upgrade with **HTTP 400** + JSON body. Never 101-then-close. |
-| Auth | `Authorization: Bearer <token>` is required, and `hello.token` MUST be present and equal to it. Bad/absent **at the upgrade** → **HTTP 401**, no 101. A token rejected at the `hello` re-check, after the 101 (e.g. it expired between the upgrade and `hello`, or the server only validates there) → `error{UNAUTHORIZED}` + close **4011**, no `welcome`. §2.9's Reconnect table treats the two identically. |
+| Auth | `hello.token` is **always required**. The client SHOULD also send `Authorization: Bearer <token>` on the upgrade whenever its runtime can set request headers; browser-class runtimes (the browser `WebSocket` API, Electron renderers, Firefox-based hosts) cannot, and send none. A server MUST accept an upgrade with **no** `Authorization` header and authenticate on `hello.token` alone. When the header **is** present it MUST be a well-formed `Bearer <token>`, and `hello.token` MUST equal it. A malformed or rejected header **at the upgrade** → **HTTP 401**, no 101. A token rejected at the `hello` check, after the 101 (a `hello.token` that does not equal the header, or that the server rejects — e.g. it expired between the upgrade and `hello`, the server only validates there, or there was no header to validate earlier) → `error{UNAUTHORIZED}` + close **4011**, no `welcome`. §2.9's Reconnect table treats the two identically. A server that accepts header-less upgrades loses its cheap pre-upgrade reject for them and SHOULD bound how many un-authenticated sockets it holds before `hello` (the 10 s hello timer, §2.9, bounds how long each one lives). |
 | Forbidden | Token in `Sec-WebSocket-Protocol` (collides with version negotiation, gets echoed back). Token in the query string (lands in every access log). |
 | Opcode | **Binary (0x2) always.** A text frame is a connection `PROTOCOL_ERROR`. |
 | Compression | `permessage-deflate` MUST be disabled on both ends. |
@@ -243,7 +245,7 @@ never two objects in one frame.
 |---|---|:--:|---|
 | `t` | `"hello"` | ✔ | |
 | `v` | integer | ✔ | must be `1` and match the subprotocol. Mismatch → `UNSUPPORTED` (4010) |
-| `token` | string 1–4096 | ✔ | must equal the `Authorization` bearer token |
+| `token` | string 1–4096 | ✔ | must equal the `Authorization` bearer token when the upgrade carried one; the sole credential when it did not (§2.1) |
 | `agent` | object | ✔ | `{sdk, sdk_version, runtime?, os?}`; strings ≤ 128 chars. **Required on purpose** — when a third-party SDK misbehaves the server log must name it |
 | `window` | integer | | this peer's receive window, `16384 … 2^31-1`. Default 262144 |
 | `max_streams` | integer | | streams this peer will accept, `1 … 100000`. Default 64 |
@@ -442,7 +444,7 @@ straight off a bare close in `4001`–`4999` via the mechanical `ws_close = 4000
 sequenceDiagram
     participant C as Client
     participant S as Server
-    C->>S: GET /v1/tunnel · Sec-WebSocket-Protocol: ws-mixer.v1 · Authorization: Bearer
+    C->>S: GET /v1/tunnel · Sec-WebSocket-Protocol: ws-mixer.v1 · Authorization: Bearer (when the runtime can set it)
     S-->>C: 101 · Sec-WebSocket-Protocol: ws-mixer.v1
     Note over S: start 10 s hello timer
     C->>S: DATA(0) {"t":"hello","v":1,…}
