@@ -1,0 +1,28 @@
+{
+  "description": "Stale events: after configure() replaced the config, everything the superseded connection still delivers while it closes (registered, disable, conflict, a fatal close) is ignored; only the new connection moves the status.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "hold": {} },
+    { "configure": { "name": "notes2" } },
+    { "registered": { "conn": 1, "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disabled": { "conn": 1, "reason": "disabled" } },
+    { "conflict": { "conn": 1 } },
+    { "disconnect": { "conn": 1, "fatal": true, "code": "UNAUTHORIZED", "wsCode": 4011 } },
+    { "tick": { "ms": 7000 } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes2-tester.mcpwarp.test/mcp", "id": "srv_notes2", "created": true }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes2-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 2
+}

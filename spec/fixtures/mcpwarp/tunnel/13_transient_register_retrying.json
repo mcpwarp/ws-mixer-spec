@@ -1,0 +1,31 @@
+{
+  "description": "A transient register refusal is connecting + RETRYING with the register lastError (cause, not message prefix, decides: Q7), re-sent after 1 s, 2 s, ... A transient code named INTERNAL is a register retry, not TunnelStatusCode INTERNAL. After a lost connection the same refusal turns DISCONNECTED into RETRYING; the backoff restarts at 1 s because the earlier register succeeded.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "UNAVAILABLE", "message": "backend hiccup" } },
+    { "retry": { "delayMs": 1000, "cause": "register" } },
+    { "register_error": { "code": "TIMEOUT", "message": "rpc timeout" } },
+    { "retry": { "delayMs": 2000, "cause": "register" } },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "INTERNAL", "message": "backend error" } },
+    { "retry": { "delayMs": 1000, "cause": "register" } },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "connecting", "code": "RETRYING", "lastError": "mcpwarp couldn't register the service; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "connecting", "code": "RETRYING", "lastError": "mcpwarp couldn't register the service; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 2
+}

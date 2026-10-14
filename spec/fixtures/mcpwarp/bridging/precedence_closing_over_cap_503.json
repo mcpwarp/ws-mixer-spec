@@ -1,0 +1,11 @@
+{
+  "description": "Precedence 503 > 413: while closing, a /mcp request whose body exceeds the cap gets 503 {\"error\":\"service closing\"}; the body is never read, because a body that will be refused is not read. MCPWARP.md §4 precedence table (I2)",
+  "sdkState": "closing",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 16 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 95\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"search\",\"arguments\":{\"q\":\"x\"}}}",
+  "upstream": null,
+  "out": "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 27\r\n\r\n{\"error\":\"service closing\"}",
+  "notes": "In state disabled the body is \"service disabled\" and the precedence is the same."
+}

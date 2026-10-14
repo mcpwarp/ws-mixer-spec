@@ -1,0 +1,8 @@
+{
+  "description": "conflict without the required server id. MCPWARP.md §2 decode rules, §3",
+  "op": "conflict",
+  "message": { "v": 1, "op": "conflict", "name": "anki", "reason": "taken_over" },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "conflict.id must be a string" }
+}

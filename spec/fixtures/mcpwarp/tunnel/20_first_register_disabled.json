@@ -1,0 +1,27 @@
+{
+  "description": "The first register refused SERVER_DISABLED is state disabled (not error); losing the connection while disabled is connecting + DISCONNECTED; the re-register on the new connection is refused again (disabled); enable -> connecting -> online.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "SERVER_DISABLED", "message": "server disabled", "id": "srv_notes" } },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "SERVER_DISABLED", "message": "server disabled", "id": "srv_notes" } },
+    { "enabled": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 2
+}

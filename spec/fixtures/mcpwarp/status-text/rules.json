@@ -1,0 +1,69 @@
+{
+  "description": "describeStatus rules for the normative status text tables (docs/MCPWARP.md section 7). One table file per locale (en.json, de.json, es.json, fr.json, ja.json, zh-CN.json), every one with exactly the key set of en.json; cases.json holds input -> expected examples every SDK runs.",
+  "keyFormat": {
+    "pattern": "^(off|connecting|online|disabled|conflict|error)\\.(none|[A-Z][A-Z_]*)$",
+    "rule": "<state>.<code>, with the literal 'none' when the status carries no code. The key set of en.json is exactly the set of legal (state, code) pairings of a TunnelStatus.",
+    "value": "{label, detail?} = describeStatus({state, code}) with no lastError. detail is left out when it would equal label.",
+    "stateLabel": "states[state] = label of any key starting with '<state>.'; every key of one state has the same label",
+    "codeSentence": "codes[code] = detail ?? label of any key ending in '.<code>'; every key of one code has the same sentence (INTERNAL pairs with connecting and error, and connecting.INTERNAL and error.INTERNAL carry the same sentence in every locale)"
+  },
+  "locales": ["en", "de", "es", "fr", "ja", "zh-CN"],
+  "localeResolution": {
+    "order": ["en", "de", "es", "fr", "ja", "zh-CN"],
+    "steps": [
+      "a locale that is not a string resolves to en",
+      "tag = locale with surrounding whitespace trimmed, every '_' replaced by '-', lowercased",
+      "exact: the first entry of order whose lowercased form equals tag",
+      "language: else the first entry of order whose lowercased primary subtag (text before the first '-') equals tag's primary subtag",
+      "else en"
+    ]
+  },
+  "zhAlias": "zh-CN",
+  "colonJoiner": {
+    "en": ": ",
+    "de": ": ",
+    "es": ": ",
+    "fr": " : ",
+    "ja": "：",
+    "zh-CN": "："
+  },
+  "detailOmittedWhenEqualLabel": true,
+  "detailOmittedWhenEmpty": true,
+  "lastErrorColonRewrite": { "pattern": ":\\s+", "flags": "g", "replacement": "; " },
+  "composition": [
+    "label = states[state] when state is a known state, else the state value as a string",
+    "sentence = codes[code] when code is a known code, else none",
+    "no sentence (code absent or unknown): detail = lastError, unchanged (no colon rewrite)",
+    "code INVALID_CONFIG with a non-empty lastError: detail = invalidConfig composition",
+    "any other known code: detail = sentence; lastError is not shown (this includes INVALID_NAME, whose sentence carries the name rule itself)",
+    "detail is left out when it is absent, empty, or equal to label"
+  ],
+  "invalidConfigComposition": {
+    "genericLastError": "The tunnel settings are invalid.",
+    "steps": [
+      "lastError equals genericLastError: detail = sentence",
+      "lastError starts with sentence: detail = lastError",
+      "else: detail = sentence + colonJoiner[locale] + lastError with lastErrorColonRewrite applied"
+    ]
+  },
+  "codeLessError": "A status with no code (or a code outside the table) shows lastError as its detail, for any state, unchanged.",
+  "hostOffPattern": {
+    "rule": "Before a host can configure the tunnel (no token yet, say) it shows its own status {state: \"off\", lastError: <host constant>} with no code; describeStatus returns {label: <off label>, detail: <host constant>}.",
+    "example": { "status": { "state": "off", "lastError": "Add an mcpwarp token in the settings to go online." }, "locale": "en", "expect": { "label": "Off", "detail": "Add an mcpwarp token in the settings to go online." } }
+  },
+  "codeSentenceEqualsStateLabel": { "DISABLED": "disabled", "TAKEN_OVER": "conflict" },
+  "lint": [
+    "no ASCII '...' (the ellipsis is U+2026)",
+    "no trailing '.' or '。'",
+    "no leading or trailing whitespace",
+    "the only translated strings equal to the English ones: de states.online ('Online') and es states.error ('Error')"
+  ],
+  "newInSpec": [
+    "en:error.INVALID_NAME",
+    "de:error.INVALID_NAME",
+    "es:error.INVALID_NAME",
+    "fr:error.INVALID_NAME",
+    "ja:error.INVALID_NAME",
+    "zh-CN:error.INVALID_NAME"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "description": "disable for the agent's server id with an explicit reason; the agent answers further /mcp requests with 503 until enable. MCPWARP.md §2, §3",
+  "op": "disable",
+  "message": { "v": 1, "op": "disable", "id": "srv_anki", "reason": "disabled" },
+  "schema_valid": true,
+  "wire_valid": true
+}

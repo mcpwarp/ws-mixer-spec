@@ -1,0 +1,11 @@
+{
+  "description": "While the service is disabled in the dashboard, a request to /mcp is answered 503 {\"error\":\"service disabled\"} without calling the handler. MCPWARP.md §4 status table",
+  "sdkState": "disabled",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": null,
+  "out": "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 28\r\n\r\n{\"error\":\"service disabled\"}",
+  "notes": "After enable and a successful re-register the same request reaches the handler again."
+}

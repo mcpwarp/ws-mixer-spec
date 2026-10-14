@@ -1,8 +1,10 @@
 # ws-mixer-spec — overview
 
 This repo is the `ws-mixer.v1` specification: the normative wire spec, client-SDK requirements, the
-protocol decision log, the conformance fixture corpus, and the cross-SDK conformance runner. It contains no
-implementation — no server, no client, no adapters. See [`REPOS.md`](./REPOS.md) for where those live.
+protocol decision log, the conformance fixture corpus, and the cross-SDK conformance runner. It also holds
+the spec of the mcpwarp layer that rides on `ws-mixer.v1` ([`MCPWARP.md`](./MCPWARP.md), `D-2026-10-14-01`),
+kept separate from the core. It contains no implementation — no server, no client, no adapters. See
+[`REPOS.md`](./REPOS.md) for where those live.
 
 Research inputs (evidence, prior art and rejected alternatives live there, not in the normative docs):
 
@@ -17,7 +19,8 @@ Research inputs (evidence, prior art and rejected alternatives live there, not i
 **Is:**
 
 - A library that carries **N independent byte streams over one WebSocket connection**, in both directions.
-- **Standalone.** No mcpwarp types, no HTTP types, no MCP types anywhere in the core.
+- **Standalone.** No mcpwarp types, no HTTP types, no MCP types anywhere in the core. The mcpwarp layer
+  ([`MCPWARP.md`](./MCPWARP.md)) sits above it, inside opaque `app` bodies and stream bytes.
 - **Symmetric in data, asymmetric in control.** Only the server opens streams; both sides read, write and close them.
 - **Flow-controlled.** Every stream has a credit window, so one slow reader cannot stall the others.
 - **Observable.** Every failure carries a numeric code *and* a human message that contains a number that came off the wire.
@@ -47,4 +50,5 @@ Research inputs (evidence, prior art and rejected alternatives live there, not i
 | Which repo owns what, and the pin/tag policy between them | [`REPOS.md`](./REPOS.md) |
 | The conformance fixtures and how they're structured | [`../spec/README.md`](../spec/README.md) |
 | The cross-SDK conformance runner | [`CONFORMANCE.md`](./CONFORMANCE.md) |
-| How mcpwarp itself builds on ws-mixer, and Go/JS implementation notes | that implementation's own repo (see [`REPOS.md`](./REPOS.md)) — this is product- and language-specific material that lives outside the spec |
+| How mcpwarp builds on ws-mixer — envelope, registration, request bridging, the SDK profile (normative) | [`MCPWARP.md`](./MCPWARP.md); schema and fixtures in [`../spec/`](../spec/) |
+| Go/JS implementation notes | that implementation's own repo (see [`REPOS.md`](./REPOS.md)) — language-specific material that lives outside the spec |

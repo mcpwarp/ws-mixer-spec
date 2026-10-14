@@ -4,7 +4,7 @@
 
 | Repo | Visibility | License | Contents |
 |---|---|---|---|
-| [`ws-mixer-spec`](https://github.com/mcpwarp/ws-mixer-spec) (this repo) | public | Apache-2.0 | wire spec, client-SDK requirements, decision log, fixtures + schema + checker, the cross-SDK conformance runner + scenarios |
+| [`ws-mixer-spec`](https://github.com/mcpwarp/ws-mixer-spec) (this repo) | public | Apache-2.0 | wire spec, client-SDK requirements, decision log, fixtures + schema + checker, the cross-SDK conformance runner + scenarios, the mcpwarp layer spec + its schema and fixtures |
 | `ws-mixer-go` | public | Apache-2.0 | Go module `github.com/mcpwarp/ws-mixer-go` — protocol core + Go client + its conformance adapter |
 | `ws-mixer-js` | public | Apache-2.0 | npm `@mcpwarp/ws-mixer` + its conformance adapter |
 | `ws-mixer-server` | private (AGPL-3.0 if opened) | AGPL-3.0 | Go module `github.com/mcpwarp/ws-mixer-server` — HTTP/upgrade layer, auth policy, server ops |
@@ -19,6 +19,7 @@ every implementation is validated against.
 |---|---|
 | Wire framing, streams, flow control, control channel, error codes, sequences (normative) | [`WIRE.md`](./WIRE.md) |
 | Client SDK behavioural requirements, all languages (normative) | [`CLIENT-SDK.md`](./CLIENT-SDK.md) |
+| mcpwarp layer above ws-mixer: envelope, registration, request bridging, SDK profile, status text (normative) | [`MCPWARP.md`](./MCPWARP.md); `../spec/mcpwarp.schema.json`, `../spec/fixtures/mcpwarp/` |
 | Protocol decision log | [`DECISIONS.md`](./DECISIONS.md) |
 | Conformance fixtures, schema, checker | [`../spec/`](../spec/) |
 | Cross-SDK conformance runner + scenarios | [`../conformance/`](../conformance/) — see [`CONFORMANCE.md`](./CONFORMANCE.md) |

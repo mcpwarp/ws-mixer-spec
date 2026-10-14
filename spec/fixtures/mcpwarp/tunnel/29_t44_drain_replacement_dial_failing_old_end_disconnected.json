@@ -1,0 +1,28 @@
+{
+  "description": "T44: after a drain while online the replacement's dial fails (T29, no snapshot); the drained connection then ends before any replacement has received welcome, so it is a lost connection: connecting + DISCONNECTED. The replacement's redial is the pending reconnect; another failed dial keeps DISCONNECTED (T28); the next replacement registers -> online.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "dial_failed": {} },
+    { "disconnect": { "conn": 1, "fatal": false, "code": "GOING_AWAY", "wsCode": 4012 } },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "dial_failed": {} },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 4
+}

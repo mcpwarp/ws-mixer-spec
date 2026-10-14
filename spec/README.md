@@ -9,18 +9,24 @@ disagree, WIRE.md wins — everything below is derived from it, not the other wa
 spec/
   control.schema.json          JSON Schema draft 2020-12, strict, one $defs entry per control message type
   control.relaxed.schema.json  generated: strict minus every additionalProperties:false. Never hand-edited
+  mcpwarp.schema.json          JSON Schema draft 2020-12, strict, one $defs entry per mcpwarp envelope op
   fixtures/
-    COUNTS.json                      checked-in floor for the total fixture count (see Validation below)
+    COUNTS.json                      checked-in floors for the total and the mcpwarp fixture counts (see Validation below)
     control/<type>/valid/*.json      one directory per t: hello, welcome, ping, pong, drain, error, app
     control/<type>/invalid/*.json
     control/envelope/invalid/*.json  envelope-level violations that aren't any one message type (see below)
     frames/*.json                    hex-encoded mux frame corpus (wire format, WIRE.md section 2.2-2.4)
     sequences/*.json                 named connection transcripts + expected terminal state
+    mcpwarp/                         the mcpwarp layer (docs/MCPWARP.md), run by each mcpwarp SDK's own CI
+      envelope/{valid,invalid}/*.json  envelope ops vs mcpwarp.schema.json and the §2 decode rules
+      bridging/*.json                  raw HTTP/1.1 request in / response out on one stream
+      tunnel/*.json                    tunnel controller event sequences (shape: tunnel/README.md)
+      status-text/*.json               describeStatus rules, cases and one table per locale
   tools/
     gen-relaxed-schema.mjs    (re)generates control.relaxed.schema.json from control.schema.json
     check-fixtures.mjs        validates every fixture against control.schema.json /
-                               control.relaxed.schema.json and re-derives every frame fixture's
-                               `decoded` from its `hex`, dependency-free
+                               control.relaxed.schema.json / mcpwarp.schema.json and re-derives every
+                               frame fixture's `decoded` from its `hex`, dependency-free
 ```
 
 **Deliberate deviation from the original design sketch:** an earlier plan showed one flat
@@ -238,6 +244,70 @@ command an app-level stream write or reset; `window_exhaustion_then_resume_clien
 protocol-correct for the same reason but is not fully drivable by every harness (see its own
 `description`) — both are documented inline rather than silently adjusted to fit harness limitations.
 
+## mcpwarp fixtures
+
+`fixtures/mcpwarp/` holds the data for the mcpwarp layer ([`../docs/MCPWARP.md`](../docs/MCPWARP.md)). The Go
+conformance runner never reads it (it loads `fixtures/sequences/` only, non-recursively); each mcpwarp SDK runs
+it in its own CI. Where this section and MCPWARP.md disagree, MCPWARP.md wins.
+
+### `mcpwarp.schema.json` and `envelope/`
+
+An instance is the value of `body.mcpwarp` inside an `app` control message, not the `app` message. Top level is
+a `oneOf` over 8 `$defs` entries, one per op, `op` a `const` in each: `register`, `unregister` (agent → edge),
+`registered`, `unregistered`, `disable`, `enable`, `conflict`, `error` (edge → agent). There are no helper
+`$defs`, because the checker treats every `$defs` entry as a `oneOf` branch. Strict like `control.schema.json`:
+`additionalProperties: false` everywhere, a test-time typo-catcher only. `enum` (`kind`, the 17 register error
+codes, the 6 app error codes), `minItems` and `maxItems` (`register`/`unregister` carry exactly one service) are
+written into the schema for real validators; `check-fixtures.mjs` applies them in code, because its validator
+subset ignores them.
+
+`envelope/{valid,invalid}/<op>_<case>.json` uses the control fixture shape plus an `op` key naming the op under
+test (needed for coverage, since a broken message may not name it): `description`, `op`, `message`,
+`schema_valid`, `wire_valid`, and `expect` (`error_code`, `message_contains`) only when `schema_valid` is `false`.
+`wire_valid` means "the receiver accepts it":
+
+| Direction | `wire_valid` is decided by |
+|---|---|
+| agent → edge (`register`, `unregister`) | the schema with every `additionalProperties: false` removed, plus `enum`/`minItems`/`maxItems` |
+| edge → agent (the other 6) | the MCPWARP.md §2 decode rules: `v` other than `1` or an unknown `op` is ignored; unknown fields are ignored; absent or `null` lists are `[]`; `created` absent or `null` is `false`; `registered.services[].url` is a required non-empty string; any other type mismatch, including `null` in an optional string, is `MALFORMED_ENVELOPE` |
+
+So `registered` with `created: null`, `null` lists or an unknown error code is `schema_valid: false,
+wire_valid: true`, and its `expect.error_code` is a `SCHEMA_*` hint (`SCHEMA_TYPE`, `SCHEMA_ENUM`,
+`SCHEMA_ADDITIONAL_PROPERTIES`). Otherwise, for an edge → agent op, `expect.error_code` is `MALFORMED_ENVELOPE`,
+`UNSUPPORTED_VERSION`, `UNKNOWN_OP` or a register/app error code and must equal what the decode rules give; for
+an agent → edge op it is the edge's answer where MCPWARP.md §2 fixes one (`INVALID_NAME`, `UNKNOWN_OP`,
+`UNSUPPORTED_VERSION`) or, for a message an agent MUST NOT send and whose answer is not specified, a `SCHEMA_*`
+hint that edge runners skip (`SCHEMA_MIN_ITEMS` for an empty `services`, `SCHEMA_MAX_ITEMS` for two services,
+since `TOO_MANY_SERVICES` is only a MAY), never `MALFORMED_ENVELOPE`/`NOT_OURS`. `expect.message_contains` must occur in
+the checker's own findings for the message. Every op has ≥1 `schema_valid` and ≥3 `schema_valid: false` fixtures.
+
+### `bridging/`
+
+One HTTP request on one stream, as raw HTTP/1.1 text with `\r\n` line ends:
+
+| Key | Meaning |
+|---|---|
+| `description`, `notes` | what the fixture pins and why |
+| `sdkState` | `online`, `disabled` or `closing` when the request arrives |
+| `mode` | `handler` or `target`; `target` mode adds `target`, the local server URL |
+| `limits` | `maxRequestBodyBytes` (default 4194304), `targetTimeoutMs` (target only) |
+| `handler` | `{behaviour}`: `echo` (200, the request's `content-type` and body, no Content-Length), `throw`, `hang` (no response headers ever; target mode). In target mode it describes the local server |
+| `in` | the bytes the edge writes on the stream before it CLOSEs its write side (no `Authorization`, the edge strips it) |
+| `inExpand` | optional `{marker: {repeat, count}}`: replace the marker in `in` with `repeat` × `count` before writing (`head_431.json`, whose head is over 64 KiB) |
+| `upstream` | the request the app receives: `{method, url, headers, body}` with lower-case header names, or `null` when the app MUST NOT be called |
+| `out` | the bytes the SDK writes back before it CLOSEs |
+
+An SDK-generated error reply (MCPWARP.md §4.5: 404, 413, 431, 500 `handler error`, 503, 504) is compared
+byte-exact. A response that comes from the app is compared by status line, header set (names
+case-insensitive, order free) and de-chunked body; chunk boundaries are not normative. File names end in the
+expected status (`_404`), except `mcp_post_ok` and `notification_passthrough` (200).
+
+### `tunnel/` and `status-text/`
+
+`tunnel/README.md` defines the event-sequence shape and runner contract. `status-text/rules.json` states the
+`describeStatus` rules, `cases.json` holds input → expected examples, and `<locale>.json` maps every legal
+`<state>.<code|none>` pairing to `{label, detail?}`.
+
 ## Consuming these fixtures from an SDK test harness
 
 In any language: load every file under `fixtures/control/<type>/{valid,invalid}/`, feed `.message` through
@@ -288,7 +358,39 @@ earns its keep, as the arbiter that keeps independent SDKs honest with each othe
    with `schema_valid: false`.
 6. The total number of `*.json` files under `fixtures/` (excluding `fixtures/COUNTS.json` itself) is at least
    `fixtures/COUNTS.json`'s `minimum_total_fixtures` — a checked-in floor that must be bumped upward whenever
-   fixtures are added, and must never be lowered to paper over a regression.
+   fixtures are added, and must never be lowered to paper over a regression. The `*.json` files under
+   `fixtures/mcpwarp/` are also held to their own floor, `minimum_mcpwarp_fixtures`, so an added control
+   fixture cannot mask a deleted mcpwarp one.
+7. `fixtures/mcpwarp/envelope/`: every fixture's `schema_valid` matches `mcpwarp.schema.json` plus its `enum`,
+   `minItems` and `maxItems` (applied in code), `wire_valid` matches the table in "mcpwarp fixtures" above, the bucket matches
+   `schema_valid`, the file name starts with its `op`, `expect` follows the rules above, and every op has ≥1
+   valid and ≥3 invalid fixtures. `envelope/` and `bridging/` must exist (hard failure).
+8. `fixtures/mcpwarp/bridging/`: required keys and enums; `in` parses as a request (request line, CRLF lines,
+   exactly one `Host`, no `Authorization`, framing that matches the body) and `out` as a response (status line,
+   valid Content-Length or chunked framing); the `out` status equals the file name's and the one the precedence
+   431 > 404 > 503 > 413 > app gives; the reason phrase is the RFC 9110 one (413 `Content Too Large`); SDK error
+   replies equal the §4.5 bytes exactly (`Content-Type: application/json`, `Content-Length`, `{"error": ...}` with
+   the §4 message); `upstream` is `null` for 404/413/431/503
+   and otherwise equals the forwarded request (handler: `https://<Host><target>`, end-to-end headers without
+   `expect`/`content-length`; target: target URL plus the query, `host` removed, `accept-encoding: identity`,
+   `x-forwarded-host`, `x-forwarded-proto: https`); an `echo` response body equals the request body.
+9. `fixtures/mcpwarp/tunnel/` (skipped with a note when absent): `description`, `config`, `events`, non-empty
+   `expect`; every event (and `burst` item) has exactly one key, an event name from `tunnel/README.md`'s
+   Events table, and only that event's payload keys (required ones present); every snapshot has only `state`,
+   `code`, `lastError`, `url`; `code` is absent (no code) or a TunnelStatusCode string (`null` and `"none"` are
+   rejected) and `(state, code)` is a legal pairing; `lastError` is present exactly when a code is, is one of
+   the MCPWARP.md §6.6 constants for that code (`connecting`/`INTERNAL` and `error`/`INTERNAL` share one), and
+   never contains a config's token (a token under 4 characters is compared by equality); `url` is
+   set, non-empty, exactly when `state` is `online`; two adjacent identical snapshots occur at most once per
+   `subscribe` event.
+10. `fixtures/mcpwarp/status-text/` (skipped with a note when absent): `rules.json`, `cases.json` and `en.json`
+    exist; `en.json`'s keys are exactly the legal `<state>.<code|none>` pairings (keys starting `_` or `$` are
+    free); every other locale file has exactly `en.json`'s key set; values are `{label, detail?}` with
+    non-empty strings, no ASCII `...`, no trailing `.`/`。`, no surrounding whitespace, and `detail` ≠ `label`;
+    in each locale every key of one state has the same label and every key of one code (`connecting.INTERNAL`,
+    `error.INTERNAL`) the same sentence (`detail ?? label`); `rules.json`'s `locales` names exactly the table
+    files; every case in `cases.json` has `description`, `input.status` and `expect {label, detail?}`, and
+    `expect` equals what the `rules.json` composition gives from the locale tables.
 
 Run it with `node spec/tools/check-fixtures.mjs` from anywhere in the repo. Regenerate the relaxed schema
 separately with `node spec/tools/gen-relaxed-schema.mjs` (or `--check` to only verify, no write).

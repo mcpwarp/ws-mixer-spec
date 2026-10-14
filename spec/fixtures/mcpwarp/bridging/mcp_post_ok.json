@@ -1,0 +1,22 @@
+{
+  "description": "A JSON-RPC POST to /mcp while online reaches the handler: the edge's request (Host = public host, no Authorization) is turned into a web Request for https://<Host>/mcp with every end-to-end header, including mcp-session-id, unchanged. The handler's response without a Content-Length is framed chunked, then the agent CLOSEs its write side. MCPWARP.md §4",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nmcp-session-id: abc\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "https://notes-tester.mcpwarp.test/mcp",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "notes-tester.mcpwarp.test",
+      "mcp-session-id": "abc",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+  },
+  "out": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n28\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\r\n0\r\n\r\n",
+  "notes": "Chunk boundaries are not normative (one chunk per body read); compare the de-chunked body. Content-Length is dropped from the headers the handler sees and recomputed by the web Request."
+}

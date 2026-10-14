@@ -1,0 +1,12 @@
+{
+  "description": "registered with created null: a sender sends a boolean (strict schema), but the decoder accepts null and decodes it as false. MCPWARP.md §2 decode rules (I11)",
+  "op": "registered",
+  "message": {
+    "v": 1,
+    "op": "registered",
+    "services": [{ "name": "anki", "id": "srv_anki", "url": "https://anki-tester.mcpwarp.test/mcp", "created": null }]
+  },
+  "schema_valid": false,
+  "wire_valid": true,
+  "expect": { "error_code": "SCHEMA_TYPE", "message_contains": "created" }
+}

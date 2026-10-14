@@ -1,0 +1,19 @@
+{
+  "off.none": { "label": "Desactivado" },
+  "connecting.none": { "label": "Conectando…" },
+  "connecting.RETRYING": { "label": "Conectando…", "detail": "Error de conexión, reintentando" },
+  "connecting.DISCONNECTED": { "label": "Conectando…", "detail": "Conexión perdida, reconectando" },
+  "connecting.INTERNAL": { "label": "Conectando…", "detail": "Error inesperado" },
+  "online.none": { "label": "En línea" },
+  "disabled.DISABLED": { "label": "Desactivado en el panel de mcpwarp" },
+  "conflict.TAKEN_OVER": { "label": "Otra instancia ha tomado este nombre" },
+  "error.UNAUTHORIZED": { "label": "Error", "detail": "Token de acceso rechazado" },
+  "error.INVALID_CONFIG": { "label": "Error", "detail": "Configuración no válida" },
+  "error.INVALID_NAME": { "label": "Error", "detail": "Nombre de servicio no válido (letras minúsculas, dígitos y guiones internos, 30 caracteres como máximo)" },
+  "error.USERNAME_REQUIRED": { "label": "Error", "detail": "Define un nombre de usuario en tu cuenta de mcpwarp" },
+  "error.QUOTA_EXCEEDED": { "label": "Error", "detail": "Límite del plan alcanzado" },
+  "error.CONFLICT": { "label": "Error", "detail": "El nombre ya está en uso" },
+  "error.UNSUPPORTED_VERSION": { "label": "Error", "detail": "Es necesario actualizar el plugin" },
+  "error.DISCONNECTED_FATAL": { "label": "Error", "detail": "No se pudo conectar con mcpwarp" },
+  "error.INTERNAL": { "label": "Error", "detail": "Error inesperado" }
+}

@@ -1,0 +1,38 @@
+{
+  "description": "Fatal transport closes per the ws-mixer reconnect rules (static token): close 4011 UNAUTHORIZED before welcome and after registration is UNAUTHORIZED; close 4010 UNSUPPORTED before registration and after it is DISCONNECTED_FATAL. No reconnect follows; the same config then starts again.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "disconnect": { "fatal": true, "code": "UNAUTHORIZED", "wsCode": 4011 } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "disconnect": { "fatal": true, "code": "UNAUTHORIZED", "wsCode": 4011 } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "disconnect": { "fatal": true, "code": "UNSUPPORTED", "wsCode": 4010 } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disconnect": { "fatal": true, "code": "UNSUPPORTED", "wsCode": 4010 } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "error", "code": "UNAUTHORIZED", "lastError": "The token was rejected." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "error", "code": "UNAUTHORIZED", "lastError": "The token was rejected." },
+    { "state": "connecting" },
+    { "state": "error", "code": "DISCONNECTED_FATAL", "lastError": "The connection to mcpwarp failed." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "error", "code": "DISCONNECTED_FATAL", "lastError": "The connection to mcpwarp failed." }
+  ],
+  "expectDials": 4
+}

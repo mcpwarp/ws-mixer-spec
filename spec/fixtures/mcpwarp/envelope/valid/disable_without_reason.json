@@ -1,0 +1,7 @@
+{
+  "description": "disable without reason: reason is optional and decodes as \"disabled\". MCPWARP.md §2 decode rules",
+  "op": "disable",
+  "message": { "v": 1, "op": "disable", "id": "srv_anki" },
+  "schema_valid": true,
+  "wire_valid": true
+}

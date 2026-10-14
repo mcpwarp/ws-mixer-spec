@@ -1,0 +1,8 @@
+{
+  "description": "error with message null: null in an optional string field is MALFORMED_ENVELOPE, not the default \"\". MCPWARP.md §2 decode rules (I11)",
+  "op": "error",
+  "message": { "v": 1, "op": "error", "code": "BAD_REQUEST", "message": null },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "error.message must be a string" }
+}

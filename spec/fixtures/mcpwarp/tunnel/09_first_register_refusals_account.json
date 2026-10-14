@@ -1,0 +1,34 @@
+{
+  "description": "A register refusal before the first registration is fatal: state error with the code's own TunnelStatusCode and constant lastError (the server message is never shown). USERNAME_REQUIRED, QUOTA_EXCEEDED, CONFLICT and INVALID_NAME (D-2026-10-14-04). After each error the same config starts again.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "USERNAME_REQUIRED", "message": "account has no username" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "QUOTA_EXCEEDED", "message": "service quota exceeded" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "CONFLICT", "message": "name in use" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "INVALID_NAME", "message": "invalid name" } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "error", "code": "USERNAME_REQUIRED", "lastError": "Choose a username in your mcpwarp account first." },
+    { "state": "connecting" },
+    { "state": "error", "code": "QUOTA_EXCEEDED", "lastError": "Your mcpwarp account has no services left in its quota." },
+    { "state": "connecting" },
+    { "state": "error", "code": "CONFLICT", "lastError": "The name is in use by another server." },
+    { "state": "connecting" },
+    { "state": "error", "code": "INVALID_NAME", "lastError": "The service name is invalid: use lowercase letters, digits and dashes (not at the start or end), at most 30 characters." }
+  ],
+  "expectDials": 4
+}

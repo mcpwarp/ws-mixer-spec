@@ -1,0 +1,26 @@
+{
+  "description": "Invalid config while enabled is state error INVALID_CONFIG, never a throw (MCPWARP.md section 6 configure). An unset token or name is caught by configure() itself (no connecting); an invalid kind is caught when the connection starts (connecting first, no dial); an invalid config while online stops the connection; repeating it is no new snapshot. lastError is a constant and never echoes a value. An SDK whose kind type cannot hold \"ftp\" skips that event and the two snapshots it produces.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": { "token": null } },
+    { "configure": { "name": null } },
+    { "configure": { "kind": "ftp" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "configure": { "name": null } },
+    { "configure": { "name": null } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "error", "code": "INVALID_CONFIG", "lastError": "The token is not set." },
+    { "state": "error", "code": "INVALID_CONFIG", "lastError": "The service name is not set." },
+    { "state": "connecting" },
+    { "state": "error", "code": "INVALID_CONFIG", "lastError": "The tunnel settings are invalid." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "error", "code": "INVALID_CONFIG", "lastError": "The service name is not set." }
+  ],
+  "expectDials": 1
+}

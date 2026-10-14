@@ -1,0 +1,8 @@
+{
+  "description": "register service carrying an extra id field (the shape of the old WIRE.md app example): rejected by the strict test-time schema, tolerated by a receiver that ignores unknown fields. MCPWARP.md §2",
+  "op": "register",
+  "message": { "v": 1, "op": "register", "services": [{ "name": "anki", "kind": "http", "id": "anki" }] },
+  "schema_valid": false,
+  "wire_valid": true,
+  "expect": { "error_code": "SCHEMA_ADDITIONAL_PROPERTIES", "message_contains": "id" }
+}

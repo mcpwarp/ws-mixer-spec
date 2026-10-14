@@ -1,0 +1,25 @@
+{
+  "description": "A service name that fails SERVICE_NAME_RE or is longer than SERVICE_NAME_MAX (30) is state error INVALID_NAME, not INVALID_CONFIG (D-2026-10-14-04), caught when the connection starts (connecting first, no dial); after an error the next configure() starts again. A name of exactly 30 characters is valid.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": { "name": "Bad_Name" } },
+    { "configure": { "name": "" } },
+    { "configure": { "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } },
+    { "configure": { "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-tester.mcpwarp.test/mcp", "id": "srv_a30", "created": true }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "error", "code": "INVALID_NAME", "lastError": "The service name is invalid: use lowercase letters, digits and dashes (not at the start or end), at most 30 characters." },
+    { "state": "connecting" },
+    { "state": "error", "code": "INVALID_NAME", "lastError": "The service name is invalid: use lowercase letters, digits and dashes (not at the start or end), at most 30 characters." },
+    { "state": "connecting" },
+    { "state": "error", "code": "INVALID_NAME", "lastError": "The service name is invalid: use lowercase letters, digits and dashes (not at the start or end), at most 30 characters." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 1
+}

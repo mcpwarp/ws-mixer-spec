@@ -1,0 +1,19 @@
+{
+  "description": "configure() idempotence, MCPWARP.md section 6: a repeat of a pending configure, the same config while online, a token differing only by surrounding whitespace, and an absent url given as null are no change: no new dial, no snapshot.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "burst": [{ "configure": {} }, { "configure": {} }] },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "configure": {} },
+    { "configure": { "token": "  t\t" } },
+    { "configure": { "url": null } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 1
+}

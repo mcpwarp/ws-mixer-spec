@@ -1,0 +1,12 @@
+{
+  "description": "registered service without the required id. MCPWARP.md §2 decode rules",
+  "op": "registered",
+  "message": {
+    "v": 1,
+    "op": "registered",
+    "services": [{ "name": "anki", "url": "https://anki-tester.mcpwarp.test/mcp", "created": true }]
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "registered.services[].id must be a string" }
+}

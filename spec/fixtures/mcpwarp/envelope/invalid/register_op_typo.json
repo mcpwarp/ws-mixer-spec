@@ -1,0 +1,8 @@
+{
+  "description": "an op name the tunnel does not know (typo of register): the tunnel answers op:error UNKNOWN_OP. MCPWARP.md §2",
+  "op": "register",
+  "message": { "v": 1, "op": "regsiter", "services": [{ "name": "anki", "kind": "http" }] },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "UNKNOWN_OP", "message_contains": "regsiter" }
+}

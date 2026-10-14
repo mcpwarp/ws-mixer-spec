@@ -1,0 +1,26 @@
+{
+  "description": "dispose() is final: one last off to listeners, bounded by timeoutMs while a connection is held open, then subscribe() gets a single off snapshot and configure()/stop() do nothing (no dial, no snapshot).",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "hold": {} },
+    { "dispose": { "timeoutMs": 100 } },
+    { "tick": { "ms": 100 } },
+    { "subscribe": {} },
+    { "configure": {} },
+    { "configure": { "token": "t2" } },
+    { "stop": {} },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "off" },
+    { "state": "off" }
+  ],
+  "expectDials": 1
+}

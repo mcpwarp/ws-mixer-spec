@@ -1,0 +1,33 @@
+{
+  "description": "T45: a drain with reason \"replaced\" is a take-over, handled exactly like a conflict op (T34): conflict + TAKEN_OVER, no replacement dial, sticky (no dial during a long tick) until the next configure(), which restarts even with an identical config. Covered while online and while connecting after a lost connection.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "drain": { "reason": "replaced" } },
+    { "tick": { "ms": 120000 } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "drain": { "reason": "replaced" } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "conflict", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "conflict", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." }
+  ],
+  "expectDials": 3
+}

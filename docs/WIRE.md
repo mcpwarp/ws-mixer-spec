@@ -235,7 +235,7 @@ never two objects in one frame.
 {"t":"pong","id":42,"ts":1756137600123}
 {"t":"drain","reason":"rollout","last_stream_id":1287,"deadline_ms":25000,"message":"edge-7c9f-bkl2p is shutting down; reconnect now"}
 {"t":"error","code":3,"message":"stream 41: received 20480 DATA bytes with 8192 credit remaining","stream_id":41,"last_stream_id":1287}
-{"t":"app","body":{"mcpwarp":{"v":1,"op":"register","services":[{"id":"anki","name":"Anki MCP"}]}}}
+{"t":"app","body":{"mcpwarp":{"v":1,"op":"register","services":[{"name":"anki","kind":"http"}]}}}
 ```
 
 #### Field tables
@@ -317,8 +317,9 @@ A peer that receives `error` MUST NOT reply with another `error`; it logs, surfa
 `app` is legal in **both directions**, only **after `welcome`**, and is subject to the same stream-0 rate
 limit as everything else. ws-mixer does not parse, validate or interpret `body` — it does not even require
 a particular shape beyond "JSON object". This is what keeps ws-mixer's model at *one connection, N anonymous
-byte streams*: mcpwarp's `register` / `unregister` live inside `body`, defined and validated by mcpwarp's own
-schema, and a second consumer of ws-mixer never has to know they exist.
+byte streams*: mcpwarp's `register` / `unregister` live inside `body`, defined by
+[`MCPWARP.md`](./MCPWARP.md) and validated by `spec/mcpwarp.schema.json` — a separate layer, not part of this
+spec — and a second consumer of ws-mixer never has to know they exist.
 
 There is deliberately **no `register` message** in ws-mixer. Application data that must be present *before the
 first stream arrives* goes in `hello.meta` (atomic — the server has it before it sends `welcome`, so there is

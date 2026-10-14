@@ -1,0 +1,8 @@
+{
+  "description": "error with a code outside the 6 AppErrorCode values: rejected by the strict schema's enum (enforced in code by check-fixtures.mjs); the decoder passes it through as a non-fatal error event. MCPWARP.md §2",
+  "op": "error",
+  "message": { "v": 1, "op": "error", "code": "RATE_LIMITED", "message": "slow down" },
+  "schema_valid": false,
+  "wire_valid": true,
+  "expect": { "error_code": "SCHEMA_ENUM", "message_contains": "RATE_LIMITED" }
+}

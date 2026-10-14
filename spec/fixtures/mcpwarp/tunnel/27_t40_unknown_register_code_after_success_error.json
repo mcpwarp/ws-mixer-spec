@@ -1,0 +1,37 @@
+{
+  "description": "T40: a register refusal with a code unknown to the SDK after an earlier successful registration is terminal, like BAD_REQUEST/NOT_IMPLEMENTED (T23): state error + INTERNAL, connection closed, nothing retries. On the re-register after a reconnect, and on the re-register after enable. Deviation from ws-mixer-js HEAD, which stays at connecting with code INTERNAL.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "SOMETHING_NEW", "message": "a code from a newer tunnel" } },
+    { "tick": { "ms": 120000 } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disabled": { "reason": "disabled" } },
+    { "enabled": {} },
+    { "register_error": { "code": "SOMETHING_ELSE_NEW", "message": "another code from a newer tunnel" } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "error", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+    { "state": "connecting" },
+    { "state": "error", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." }
+  ],
+  "expectDials": 3
+}

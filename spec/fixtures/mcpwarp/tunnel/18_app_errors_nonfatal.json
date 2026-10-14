@@ -1,0 +1,27 @@
+{
+  "description": "Non-fatal app errors (CONNECTION_LIMIT, UNKNOWN_OP) leave an online status alone; close 4014 APPLICATION_CLOSE is a non-fatal loss (DISCONNECTED); a non-fatal app error while reconnecting is connecting + INTERNAL until the registration lands.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "app_error": { "code": "CONNECTION_LIMIT", "message": "too many connections" } },
+    { "app_error": { "code": "UNKNOWN_OP", "message": "unknown op ping" } },
+    { "disconnect": { "fatal": false, "code": "APPLICATION_CLOSE", "wsCode": 4014 } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "app_error": { "code": "UNKNOWN_OP", "message": "unknown op ping" } },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "connecting", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 2
+}

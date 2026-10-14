@@ -1,0 +1,12 @@
+{
+  "description": "registered for the first register of this service: created true, url is the public URL, id becomes handle.serverId. MCPWARP.md §2",
+  "op": "registered",
+  "message": {
+    "v": 1,
+    "op": "registered",
+    "services": [{ "name": "anki", "id": "srv_anki", "url": "https://anki-tester.mcpwarp.test/mcp", "created": true }],
+    "errors": []
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

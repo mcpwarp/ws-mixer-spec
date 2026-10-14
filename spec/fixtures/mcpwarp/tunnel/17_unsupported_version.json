@@ -1,0 +1,24 @@
+{
+  "description": "App error UNSUPPORTED_VERSION is fatal before and after registration: state error UNSUPPORTED_VERSION.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "app_error": { "code": "UNSUPPORTED_VERSION", "message": "unsupported version 1" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "app_error": { "code": "UNSUPPORTED_VERSION", "message": "unsupported version 1" } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "error", "code": "UNSUPPORTED_VERSION", "lastError": "This SDK version is no longer supported; please update." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "error", "code": "UNSUPPORTED_VERSION", "lastError": "This SDK version is no longer supported; please update." }
+  ],
+  "expectDials": 2
+}

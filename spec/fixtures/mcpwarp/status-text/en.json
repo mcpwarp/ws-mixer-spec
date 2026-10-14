@@ -1,0 +1,19 @@
+{
+  "off.none": { "label": "Off" },
+  "connecting.none": { "label": "Connecting…" },
+  "connecting.RETRYING": { "label": "Connecting…", "detail": "Connection failed, retrying" },
+  "connecting.DISCONNECTED": { "label": "Connecting…", "detail": "Connection lost, reconnecting" },
+  "connecting.INTERNAL": { "label": "Connecting…", "detail": "Unexpected error" },
+  "online.none": { "label": "Online" },
+  "disabled.DISABLED": { "label": "Disabled in the mcpwarp dashboard" },
+  "conflict.TAKEN_OVER": { "label": "Another instance took over this name" },
+  "error.UNAUTHORIZED": { "label": "Error", "detail": "Access token was rejected" },
+  "error.INVALID_CONFIG": { "label": "Error", "detail": "Invalid settings" },
+  "error.INVALID_NAME": { "label": "Error", "detail": "Invalid service name (lowercase letters, digits and inner dashes, at most 30 characters)" },
+  "error.USERNAME_REQUIRED": { "label": "Error", "detail": "Set a username in your mcpwarp account" },
+  "error.QUOTA_EXCEEDED": { "label": "Error", "detail": "Plan limit reached" },
+  "error.CONFLICT": { "label": "Error", "detail": "Name already in use" },
+  "error.UNSUPPORTED_VERSION": { "label": "Error", "detail": "Plugin update required" },
+  "error.DISCONNECTED_FATAL": { "label": "Error", "detail": "Connection to mcpwarp failed" },
+  "error.INTERNAL": { "label": "Error", "detail": "Unexpected error" }
+}

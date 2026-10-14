@@ -1,0 +1,8 @@
+{
+  "description": "conflict with a numeric name. MCPWARP.md §2 decode rules, §3",
+  "op": "conflict",
+  "message": { "v": 1, "op": "conflict", "id": "srv_anki", "name": 1 },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "conflict.name must be a string" }
+}

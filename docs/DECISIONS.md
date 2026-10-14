@@ -252,3 +252,71 @@ upgrade headers at all; `D-2026-10-13-02` was found while bringing ws-mixer-serv
   acceptance is not conformance-tested either, which is why no SDK test hit it. Changed: `WIRE.md` §2.1 gains
   an Origin row, and the browser-class note under its request example points at it. See
   [`WIRE.md`](./WIRE.md#21-websocket-handshake), [`CONFORMANCE.md`](./CONFORMANCE.md).
+
+## 2026-10-14
+
+Project owner's approvals. `D-2026-10-14-01` is driven by the Go, Rust and Python SDKs that need a mcpwarp layer
+to implement against; `D-2026-10-14-02` through `-05` resolve inconsistencies found while specifying that layer
+from ws-mixer-js HEAD (`d45d3b4`, `SDK_VERSION` `0.10.1`) and its docs; approved by Anatoly.
+
+- **D-2026-10-14-01** — The mcpwarp application layer is specified in this repo, as
+  [`MCPWARP.md`](./MCPWARP.md) with `spec/mcpwarp.schema.json` and `spec/fixtures/mcpwarp/`, in two tiers.
+  Tier 1, the wire layer (envelope, identity, registration and take-over, request bridging, runtime
+  constraints), binds every agent and edge. Tier 2, the SDK profile (`expose()`, the tunnel controller, its
+  status codes and state machine, `describeStatus` and its locale tables), binds any SDK that ships the
+  tunnel-controller API. Both are written to ws-mixer-js 0.11.0's intended behaviour; every place HEAD differs
+  is listed in `MCPWARP.md` §11 for 0.11.0 to implement. The ws-mixer core is unchanged: it still has no
+  mcpwarp types, `app.body` stays opaque to it, and `D-2026-08-26-06` stands — the layer is documented next to
+  the core, not merged into it. Reason: the only definition of the layer was ws-mixer-js source and its
+  README, so a second SDK would have had to reverse-engineer behaviour, bugs included, and a cross-language
+  contract belongs where the pin currency already is (`spec.pin`, [`REPOS.md`](./REPOS.md)). The fixtures are
+  data each SDK runs in its own CI; the Go conformance runner does not read them. Ships as spec `v0.6.0`.
+  Changed: new `MCPWARP.md`; `OVERVIEW.md`'s intro and "Where to go next" (mcpwarp material no longer "lives
+  outside the spec"); `REPOS.md`'s repo table and "Where things live"; `WIRE.md` §2.7's `app` paragraph (points
+  at `MCPWARP.md` instead of "mcpwarp's own schema"); `CONFORMANCE.md` §1.4. See [`MCPWARP.md`](./MCPWARP.md),
+  [`REPOS.md`](./REPOS.md).
+- **D-2026-10-14-02** — MCP Streamable HTTP semantics belong to the application's handler, not the SDK. The
+  SDK MUST forward method, path, headers (including `mcp-session-id`) and body unchanged, MUST NOT inject,
+  strip or generate `Mcp-Session-Id`, and MUST NOT special-case `GET`, `DELETE` or JSON-RPC notifications. The
+  only responses it generates on `/mcp` for a well-formed request are `413`,
+  `400` `{"error":"request cannot be represented as a web Request"}`, `500` `{"error":"handler error"}`,
+  `500` `{"error":"internal error"}`, `503` while disabled or closing, and the target adapter's `502`/`504`
+  (`MCPWARP.md` §4.5). Reason: an earlier task list put session-id generation, `405` + `Allow: POST` for a
+  `GET` without an SSE `Accept`, and `202` for notifications on the SDK because they are visible on `/mcp`; an
+  SDK that did them would fight the MCP server library that already does, and would tie the transport to one
+  MCP revision. ws-mixer-js already behaves this way. Changed: `MCPWARP.md` §4.7. See [`MCPWARP.md`](./MCPWARP.md#47-mcp-semantics-belong-to-the-handler).
+- **D-2026-10-14-03** — Precedence on `/mcp` is `404` (path) > `503` (disabled/closing) > `413` (body cap) >
+  handler, in every adapter, and the `413` reason phrase is `Content Too Large` (RFC 9110). Reason: never read
+  a body that will be refused anyway — a disabled service should not buffer up to 4 MiB to then answer `503`.
+  Found while specifying: ws-mixer-js's `handler`/`target` adapters read the body before the availability
+  check (`413` beat `503`), its Node `server` adapter did the opposite, and that adapter alone said
+  `Payload Too Large`. Changed: `MCPWARP.md` §4.4, §4.5, §11 rows 5–6. See
+  [`MCPWARP.md`](./MCPWARP.md#44-precedence).
+- **D-2026-10-14-04** — `INVALID_NAME` is its own `TunnelStatusCode`, split from `INVALID_CONFIG`: a service
+  name that fails `isValidServiceName`, or an `INVALID_NAME` register refusal, is `error`/`INVALID_NAME`; every
+  other option error stays `INVALID_CONFIG`. The code set is therefore 13. And a `BAD_REQUEST`,
+  `NOT_IMPLEMENTED` or unknown register refusal is terminal for the tunnel controller before **and** after the
+  first registration: `error`/`INTERNAL`, the same mapping as a first-register refusal. A local invalid name
+  or `kind` still passes through `connecting` before `error`, as in ws-mixer-js HEAD. The `onRetry` payload
+  keeps ws-mixer-js's field name `reason` (an earlier draft said `cause`): renaming it would break every
+  existing host for no behavioural gain, and the fixtures' `retry.cause` is a fixture-side classifier, not
+  the callback field. A ws-mixer `drain` with `reason:"replaced"` is a take-over, handled exactly like a
+  `conflict` op: `TAKEN_OVER` (rejection before settle, `conflict` event after), sticky until the next
+  `configure()`, and no `register` on any later `welcome`, the drain replacement's included. Reason: a host can
+  point at the name field only if the code says it is the name;
+  ws-mixer-js HEAD left a post-success `BAD_REQUEST`/`NOT_IMPLEMENTED`/unknown refusal at
+  `connecting`/`INTERNAL` with nothing ever retrying it — a status that claims progress where none can happen;
+  an unknown code means the edge speaks something newer than the SDK, which waiting will not fix; and an edge
+  that replaces free-tier connections by draining the old one (WIRE.md §2.9) never sends that connection
+  `conflict`, so an agent treating the drain as a hand-over re-registers on the replacement and takes the name
+  back — two installs of the same name would take it from each other forever. ws-mixer-js HEAD never reads the
+  drain reason. Changed: `MCPWARP.md` §2.5, §3.3, §5.4, §5.6, §5.9, §6.5–§6.8 (T7, T19, T23, T31, T40, T41, T43,
+  new T45), §10.4, the six status-text locale files (`rules.json` `newInSpec`), §11 rows 1–2 and 15 and its
+  not-deviations line. See [`MCPWARP.md`](./MCPWARP.md#67-transitions).
+- **D-2026-10-14-05** — The status-text tables are normative data, shipped as JSON in
+  `spec/fixtures/mcpwarp/status-text/` (`rules.json`, `cases.json`, one file per locale: `en`, `de`, `es`,
+  `fr`, `ja`, `zh-CN`). An SDK ships them string-identical (it derives its own tables from the JSON; the
+  strings, not the files, must match); changing, adding or removing a string is a spec release, not an
+  SDK-local edit. Reason: the same status must read the same in every SDK and host, and the tables were
+  otherwise a TypeScript literal that each port would retype by hand. Changed: `MCPWARP.md` §7, §10.5. See
+  [`MCPWARP.md`](./MCPWARP.md#7-status-text-tier-2).

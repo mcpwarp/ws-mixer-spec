@@ -97,6 +97,15 @@ pass, that is the bug.
 | More than one connection per process | Keeps adapter state to a single struct. The runner spawns two processes instead. |
 | A pair-mode `window_exhaustion` scenario (explicit `read`/`auto_read:false`) | Both adapters briefly implemented `auto_read:false` + an explicit `read` command for this, but no scenario or fixture ever set `auto_read:false` (`set_options` always sends `auto_read:true`/omits it) or issued `read` — removed as dead code. Window credit/exhaustion behavior stays covered by each SDK's own unit tests plus `window_exhaustion_then_resume.json` (fixture mode, driven without this command). |
 
+### 1.4 mcpwarp layer fixtures
+
+`spec/fixtures/mcpwarp/**` (envelope, bridging, tunnel, status-text — [`MCPWARP.md`](./MCPWARP.md) §10) is
+**data, not runner input**. This runner never reads it: `LoadDir` is non-recursive and reads only
+`spec/fixtures/sequences/`, and the harness protocol has no mcpwarp commands or events. Each SDK that
+implements the mcpwarp layer runs those fixtures in its **own CI** with its own test code, at the spec tag
+named in its `spec.pin`; this repo's CI only checks their structure (`spec/tools/check-fixtures.mjs`).
+`D-2026-10-14-01`.
+
 ---
 
 ## 2. Raw wire actor

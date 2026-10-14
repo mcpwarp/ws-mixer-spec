@@ -1,0 +1,8 @@
+{
+  "description": "register service without kind: the SDK always sends it (default http). §2 fixes no edge answer, so expect is a SCHEMA_* hint that edge runners skip. MCPWARP.md §2, §10.2",
+  "op": "register",
+  "message": { "v": 1, "op": "register", "services": [{ "name": "anki" }] },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "SCHEMA_REQUIRED", "message_contains": "kind" }
+}

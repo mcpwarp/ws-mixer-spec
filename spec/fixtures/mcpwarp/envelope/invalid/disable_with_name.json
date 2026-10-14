@@ -1,0 +1,8 @@
+{
+  "description": "disable carrying a name field the op does not define (disable is matched by server id): rejected by the strict test-time schema, ignored by the decoder. MCPWARP.md §2",
+  "op": "disable",
+  "message": { "v": 1, "op": "disable", "id": "srv_anki", "name": "anki" },
+  "schema_valid": false,
+  "wire_valid": true,
+  "expect": { "error_code": "SCHEMA_ADDITIONAL_PROPERTIES", "message_contains": "name" }
+}

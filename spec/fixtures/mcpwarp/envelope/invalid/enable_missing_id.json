@@ -1,0 +1,8 @@
+{
+  "description": "enable without the required server id. MCPWARP.md §2 decode rules",
+  "op": "enable",
+  "message": { "v": 1, "op": "enable", "name": "anki" },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "enable.id must be a string" }
+}

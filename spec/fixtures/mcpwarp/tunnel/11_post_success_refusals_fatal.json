@@ -1,0 +1,35 @@
+{
+  "description": "A register refusal after an earlier successful registration is still fatal for the tunnel: nothing would retry it. QUOTA_EXCEEDED on the re-register after a reconnect, CONFLICT on the re-register after enable.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "QUOTA_EXCEEDED", "message": "service quota exceeded" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disabled": { "reason": "disabled" } },
+    { "enabled": {} },
+    { "register_error": { "code": "CONFLICT", "message": "name in use" } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "error", "code": "QUOTA_EXCEEDED", "lastError": "Your mcpwarp account has no services left in its quota." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+    { "state": "connecting" },
+    { "state": "error", "code": "CONFLICT", "lastError": "The name is in use by another server." }
+  ],
+  "expectDials": 3
+}

@@ -1,0 +1,25 @@
+{
+  "description": "A changed config restarts, MCPWARP.md section 6: online -> configure(new token) -> connecting while the old connection is still closing; a second change during that close supersedes the first, which never dials; only the last config dials once the old connection has ended.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "hold": {} },
+    { "configure": { "token": "t2" } },
+    { "configure": { "token": "t3" } },
+    { "tick": { "ms": 7000 } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 2
+}

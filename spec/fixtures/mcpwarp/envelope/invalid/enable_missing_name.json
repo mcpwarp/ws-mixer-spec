@@ -1,0 +1,8 @@
+{
+  "description": "enable without the required name (enable is matched by name). MCPWARP.md §2 decode rules",
+  "op": "enable",
+  "message": { "v": 1, "op": "enable", "id": "srv_anki" },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "enable.name must be a string" }
+}

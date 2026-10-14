@@ -13,7 +13,7 @@
     "window": 2147483647,
     "max_streams": 100000,
     "capabilities": ["app.v2", "drain.reconnect-hint", "x-vendor.experimental_flag.2"],
-    "meta": { "mcpwarp": { "v": 1, "services": [{ "id": "anki", "name": "Anki MCP" }] } }
+    "meta": { "client": "sdk-js", "version": "0.3.1", "os": "darwin/arm64", "integration": "3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b" }
   },
   "schema_valid": true,
   "wire_valid": true

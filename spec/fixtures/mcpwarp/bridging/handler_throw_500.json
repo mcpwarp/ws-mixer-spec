@@ -1,0 +1,22 @@
+{
+  "description": "The handler throws: the SDK answers 500 {\"error\":\"handler error\"} and reports the thrown value as a non-fatal error event; the tunnel status does not change. MCPWARP.md §4 status table",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "throw" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nmcp-session-id: abc\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "https://notes-tester.mcpwarp.test/mcp",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "notes-tester.mcpwarp.test",
+      "mcp-session-id": "abc",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+  },
+  "out": "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: 25\r\n\r\n{\"error\":\"handler error\"}",
+  "notes": "A handler that returns something that is not a response gets the same 500. The thrown message never appears in the response body."
+}

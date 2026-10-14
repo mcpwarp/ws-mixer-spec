@@ -1,0 +1,22 @@
+{
+  "description": "The edge forwards Expect: 100-continue unchanged on the stream (MCPWARP.md §4.1). The agent never sends a 1xx: the first bytes it writes are the app's final response. The app's request carries every end-to-end header except expect and content-length (§4.6 Request → handler). MCPWARP.md §4",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nexpect: 100-continue\r\nmcp-session-id: abc\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 46\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "https://notes-tester.mcpwarp.test/mcp",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "notes-tester.mcpwarp.test",
+      "mcp-session-id": "abc",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}"
+  },
+  "out": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n2e\r\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}\r\n0\r\n\r\n",
+  "notes": "A runner fails the fixture if any HTTP/1.1 1xx status line (100 Continue included) precedes the 200. Chunk boundaries are not normative; compare the de-chunked body."
+}

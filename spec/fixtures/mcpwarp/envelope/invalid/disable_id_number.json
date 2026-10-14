@@ -1,0 +1,8 @@
+{
+  "description": "disable with a numeric server id. MCPWARP.md §2 decode rules",
+  "op": "disable",
+  "message": { "v": 1, "op": "disable", "id": 17, "reason": "disabled" },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "disable.id must be a string" }
+}

@@ -1,0 +1,8 @@
+{
+  "description": "conflict with v 2: an inbound envelope whose v is not 1 decodes as an unknown op and is ignored (no conflict state, no error event). MCPWARP.md §2 decode rules",
+  "op": "conflict",
+  "message": { "v": 2, "op": "conflict", "id": "srv_anki", "name": "anki", "reason": "taken_over" },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "UNSUPPORTED_VERSION", "message_contains": "v" }
+}

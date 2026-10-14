@@ -1,0 +1,8 @@
+{
+  "description": "registered with services and errors null: a sender omits a list or sends an array (strict schema), but the decoder treats null like absent and decodes both as []. MCPWARP.md §2 decode rules",
+  "op": "registered",
+  "message": { "v": 1, "op": "registered", "services": null, "errors": null },
+  "schema_valid": false,
+  "wire_valid": true,
+  "expect": { "error_code": "SCHEMA_TYPE", "message_contains": "services" }
+}

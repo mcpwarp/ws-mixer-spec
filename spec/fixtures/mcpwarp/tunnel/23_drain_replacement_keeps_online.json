@@ -1,0 +1,30 @@
+{
+  "description": "A server drain while online stays online: the replacement registers with the same url (no snapshot), the drained connection's end is not a disconnect (each drained connection ends after its replacement's welcome: T38; before that welcome it would be T44, see 29/30), and a failed dial of a later replacement while online leaves the status alone.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disconnect": { "conn": 1, "fatal": false, "code": "GOING_AWAY", "wsCode": 4012 } },
+    { "drain": { "conn": 2 } },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "dial_failed": {} },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disconnect": { "conn": 2, "fatal": false, "code": "GOING_AWAY", "wsCode": 4012 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 4
+}

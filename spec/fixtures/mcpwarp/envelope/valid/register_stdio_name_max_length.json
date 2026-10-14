@@ -1,0 +1,7 @@
+{
+  "description": "register boundary: a 30-character name (SERVICE_NAME_MAX) with inner dashes and a trailing digit, kind stdio. MCPWARP.md §2",
+  "op": "register",
+  "message": { "v": 1, "op": "register", "services": [{ "name": "zotero-library-notes-search-01", "kind": "stdio" }] },
+  "schema_valid": true,
+  "wire_valid": true
+}

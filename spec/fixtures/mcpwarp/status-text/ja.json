@@ -1,0 +1,19 @@
+{
+  "off.none": { "label": "オフ" },
+  "connecting.none": { "label": "接続中…" },
+  "connecting.RETRYING": { "label": "接続中…", "detail": "接続に失敗したため再試行しています" },
+  "connecting.DISCONNECTED": { "label": "接続中…", "detail": "接続が切れたため再接続しています" },
+  "connecting.INTERNAL": { "label": "接続中…", "detail": "予期しないエラー" },
+  "online.none": { "label": "オンライン" },
+  "disabled.DISABLED": { "label": "mcpwarp ダッシュボードで無効化されています" },
+  "conflict.TAKEN_OVER": { "label": "別のインスタンスがこの名前を取得しました" },
+  "error.UNAUTHORIZED": { "label": "エラー", "detail": "アクセストークンが拒否されました" },
+  "error.INVALID_CONFIG": { "label": "エラー", "detail": "設定が無効です" },
+  "error.INVALID_NAME": { "label": "エラー", "detail": "サービス名が無効です（英小文字、数字、先頭と末尾以外のハイフン、30 文字以内）" },
+  "error.USERNAME_REQUIRED": { "label": "エラー", "detail": "mcpwarp アカウントでユーザー名を設定してください" },
+  "error.QUOTA_EXCEEDED": { "label": "エラー", "detail": "プランの上限に達しました" },
+  "error.CONFLICT": { "label": "エラー", "detail": "この名前は既に使用されています" },
+  "error.UNSUPPORTED_VERSION": { "label": "エラー", "detail": "プラグインの更新が必要です" },
+  "error.DISCONNECTED_FATAL": { "label": "エラー", "detail": "mcpwarp への接続に失敗しました" },
+  "error.INTERNAL": { "label": "エラー", "detail": "予期しないエラー" }
+}

@@ -1,0 +1,11 @@
+{
+  "description": "Precedence 404 > 503: while disabled, a request to an unknown path still gets 404 not_found, not 503. MCPWARP.md §4 precedence table",
+  "sdkState": "disabled",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "GET /healthz HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\nuser-agent: Go-http-client/1.1\r\n\r\n",
+  "upstream": null,
+  "out": "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: 21\r\n\r\n{\"error\":\"not_found\"}",
+  "notes": "Same answer in state closing."
+}

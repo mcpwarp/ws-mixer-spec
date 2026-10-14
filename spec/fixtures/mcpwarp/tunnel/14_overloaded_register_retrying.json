@@ -1,0 +1,19 @@
+{
+  "description": "Q7: app error OVERLOADED while a register is outstanding schedules a re-send after 1 s, which is a register retry: connecting + RETRYING with the register lastError. Deviation from ws-mixer-js HEAD, which reports nothing and stays at plain connecting.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "app_error": { "code": "OVERLOADED", "message": "too many messages in flight" } },
+    { "retry": { "delayMs": 1000, "cause": "overloaded" } },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "connecting", "code": "RETRYING", "lastError": "mcpwarp couldn't register the service; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 1
+}

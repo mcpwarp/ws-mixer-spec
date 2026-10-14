@@ -1,0 +1,19 @@
+{
+  "off.none": { "label": "Aus" },
+  "connecting.none": { "label": "Verbinden…" },
+  "connecting.RETRYING": { "label": "Verbinden…", "detail": "Verbindung fehlgeschlagen, neuer Versuch" },
+  "connecting.DISCONNECTED": { "label": "Verbinden…", "detail": "Verbindung unterbrochen, wird wiederhergestellt" },
+  "connecting.INTERNAL": { "label": "Verbinden…", "detail": "Unerwarteter Fehler" },
+  "online.none": { "label": "Online" },
+  "disabled.DISABLED": { "label": "Im mcpwarp-Dashboard deaktiviert" },
+  "conflict.TAKEN_OVER": { "label": "Eine andere Instanz hat diesen Namen übernommen" },
+  "error.UNAUTHORIZED": { "label": "Fehler", "detail": "Zugriffstoken wurde abgelehnt" },
+  "error.INVALID_CONFIG": { "label": "Fehler", "detail": "Ungültige Einstellungen" },
+  "error.INVALID_NAME": { "label": "Fehler", "detail": "Ungültiger Dienstname (Kleinbuchstaben, Ziffern und innere Bindestriche, höchstens 30 Zeichen)" },
+  "error.USERNAME_REQUIRED": { "label": "Fehler", "detail": "Legen Sie in Ihrem mcpwarp-Konto einen Benutzernamen fest" },
+  "error.QUOTA_EXCEEDED": { "label": "Fehler", "detail": "Tariflimit erreicht" },
+  "error.CONFLICT": { "label": "Fehler", "detail": "Name wird bereits verwendet" },
+  "error.UNSUPPORTED_VERSION": { "label": "Fehler", "detail": "Plugin-Update erforderlich" },
+  "error.DISCONNECTED_FATAL": { "label": "Fehler", "detail": "Verbindung zu mcpwarp fehlgeschlagen" },
+  "error.INTERNAL": { "label": "Fehler", "detail": "Unerwarteter Fehler" }
+}

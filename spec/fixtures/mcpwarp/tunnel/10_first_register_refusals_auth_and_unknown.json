@@ -1,0 +1,40 @@
+{
+  "description": "First-register refusals that map onto a shared code: UNAUTHENTICATED and FORBIDDEN are UNAUTHORIZED with different lastErrors; BAD_REQUEST, NOT_IMPLEMENTED and a code unknown to the SDK are INTERNAL.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "UNAUTHENTICATED", "message": "bad token" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "FORBIDDEN", "message": "scope missing" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "BAD_REQUEST", "message": "bad request" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "NOT_IMPLEMENTED", "message": "not implemented" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "SOMETHING_NEW", "message": "a code from a newer tunnel" } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "error", "code": "UNAUTHORIZED", "lastError": "The token was rejected." },
+    { "state": "connecting" },
+    { "state": "error", "code": "UNAUTHORIZED", "lastError": "The token is not allowed to publish this service." },
+    { "state": "connecting" },
+    { "state": "error", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." },
+    { "state": "connecting" },
+    { "state": "error", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." },
+    { "state": "connecting" },
+    { "state": "error", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." }
+  ],
+  "expectDials": 5
+}

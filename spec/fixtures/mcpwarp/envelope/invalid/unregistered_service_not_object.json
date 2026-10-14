@@ -1,0 +1,8 @@
+{
+  "description": "unregistered with services as an array of strings instead of objects. MCPWARP.md §2 decode rules",
+  "op": "unregistered",
+  "message": { "v": 1, "op": "unregistered", "services": ["anki"] },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "unregistered.services must be an array of objects" }
+}

@@ -1,0 +1,19 @@
+{
+  "off.none": { "label": "已关闭" },
+  "connecting.none": { "label": "正在连接…" },
+  "connecting.RETRYING": { "label": "正在连接…", "detail": "连接失败，正在重试" },
+  "connecting.DISCONNECTED": { "label": "正在连接…", "detail": "连接已断开，正在重新连接" },
+  "connecting.INTERNAL": { "label": "正在连接…", "detail": "意外错误" },
+  "online.none": { "label": "在线" },
+  "disabled.DISABLED": { "label": "已在 mcpwarp 控制台中停用" },
+  "conflict.TAKEN_OVER": { "label": "另一个实例已接管该名称" },
+  "error.UNAUTHORIZED": { "label": "错误", "detail": "访问令牌被拒绝" },
+  "error.INVALID_CONFIG": { "label": "错误", "detail": "设置无效" },
+  "error.INVALID_NAME": { "label": "错误", "detail": "服务名称无效（小写字母、数字和中间的连字符，最多 30 个字符）" },
+  "error.USERNAME_REQUIRED": { "label": "错误", "detail": "请在 mcpwarp 账户中设置用户名" },
+  "error.QUOTA_EXCEEDED": { "label": "错误", "detail": "已达到套餐限额" },
+  "error.CONFLICT": { "label": "错误", "detail": "名称已被占用" },
+  "error.UNSUPPORTED_VERSION": { "label": "错误", "detail": "需要更新插件" },
+  "error.DISCONNECTED_FATAL": { "label": "错误", "detail": "无法连接到 mcpwarp" },
+  "error.INTERNAL": { "label": "错误", "detail": "意外错误" }
+}

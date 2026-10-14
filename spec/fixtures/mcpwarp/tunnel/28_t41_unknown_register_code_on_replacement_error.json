@@ -1,0 +1,38 @@
+{
+  "description": "T41: a register refusal with a code unknown to the SDK on a drain replacement while online or disabled is terminal: state error + INTERNAL; both the replacement and the drained connection close and nothing redials (no dial during the long tick). A later identical configure() starts again (T37).",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "SOMETHING_NEW", "message": "a code from a newer tunnel" } },
+    { "tick": { "ms": 120000 } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disabled": { "reason": "disabled" } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "SOMETHING_NEW", "message": "a code from a newer tunnel" } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "error", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+    { "state": "error", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." }
+  ],
+  "expectDials": 4
+}

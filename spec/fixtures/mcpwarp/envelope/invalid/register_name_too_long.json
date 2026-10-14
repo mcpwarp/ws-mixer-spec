@@ -1,0 +1,8 @@
+{
+  "description": "register with a 31-character name, one over SERVICE_NAME_MAX (30). An SDK rejects it before dialing; a tunnel answers registered.errors[] INVALID_NAME. MCPWARP.md §2",
+  "op": "register",
+  "message": { "v": 1, "op": "register", "services": [{ "name": "zotero-library-notes-search-012", "kind": "http" }] },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "INVALID_NAME", "message_contains": "name" }
+}

@@ -1,0 +1,7 @@
+{
+  "description": "error CONNECTION_LIMIT without message: message is optional and decodes as \"\"; a non-fatal error for the agent. MCPWARP.md §2 decode rules",
+  "op": "error",
+  "message": { "v": 1, "op": "error", "code": "CONNECTION_LIMIT" },
+  "schema_valid": true,
+  "wire_valid": true
+}

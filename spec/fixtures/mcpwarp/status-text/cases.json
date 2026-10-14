@@ -1,0 +1,135 @@
+{
+  "description": "describeStatus(input.status, {locale: input.locale}) must return exactly expect (detail absent when not listed). Rules in rules.json; tables in <locale>.json. A locale of null means the option is absent.",
+  "cases": [
+    {
+      "description": "online with a url: label only, in en",
+      "input": { "status": { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }, "locale": "en" },
+      "expect": { "label": "Online" }
+    },
+    {
+      "description": "INVALID_CONFIG appends lastError after the en colon joiner",
+      "input": { "status": { "state": "error", "code": "INVALID_CONFIG", "lastError": "The token is not set." }, "locale": "en" },
+      "expect": { "label": "Error", "detail": "Invalid settings: The token is not set." }
+    },
+    {
+      "description": "INVALID_CONFIG: every colon followed by whitespace inside lastError becomes '; ' (fr joiner is U+00A0 colon space); 'https://' has no whitespace after its colon and is kept",
+      "input": { "status": { "state": "error", "code": "INVALID_CONFIG", "lastError": "Bad setting:  the url must look like https://host:\tnothing else." }, "locale": "fr" },
+      "expect": { "label": "Erreur", "detail": "Paramètres non valides : Bad setting; the url must look like https://host; nothing else." }
+    },
+    {
+      "description": "INVALID_CONFIG with the generic lastError shows only the sentence (de)",
+      "input": { "status": { "state": "error", "code": "INVALID_CONFIG", "lastError": "The tunnel settings are invalid." }, "locale": "de" },
+      "expect": { "label": "Fehler", "detail": "Ungültige Einstellungen" }
+    },
+    {
+      "description": "INVALID_CONFIG with a lastError that already starts with the sentence is not repeated",
+      "input": { "status": { "state": "error", "code": "INVALID_CONFIG", "lastError": "Invalid settings: check the url" }, "locale": "en" },
+      "expect": { "label": "Error", "detail": "Invalid settings: check the url" }
+    },
+    {
+      "description": "INVALID_CONFIG with an empty lastError shows only the sentence",
+      "input": { "status": { "state": "error", "code": "INVALID_CONFIG", "lastError": "" }, "locale": "en" },
+      "expect": { "label": "Error", "detail": "Invalid settings" }
+    },
+    {
+      "description": "INVALID_CONFIG in ja uses the full-width colon joiner U+FF1A",
+      "input": { "status": { "state": "error", "code": "INVALID_CONFIG", "lastError": "The service name is not set." }, "locale": "ja" },
+      "expect": { "label": "エラー", "detail": "設定が無効です：The service name is not set." }
+    },
+    {
+      "description": "INVALID_NAME shows its own sentence; lastError is not appended",
+      "input": { "status": { "state": "error", "code": "INVALID_NAME", "lastError": "The service name is invalid: use lowercase letters, digits and dashes (not at the start or end), at most 30 characters." }, "locale": "en" },
+      "expect": { "label": "Error", "detail": "Invalid service name (lowercase letters, digits and inner dashes, at most 30 characters)" }
+    },
+    {
+      "description": "INVALID_NAME in zh-CN",
+      "input": { "status": { "state": "error", "code": "INVALID_NAME", "lastError": "The service name is invalid: use lowercase letters, digits and dashes (not at the start or end), at most 30 characters." }, "locale": "zh-CN" },
+      "expect": { "label": "错误", "detail": "服务名称无效（小写字母、数字和中间的连字符，最多 30 个字符）" }
+    },
+    {
+      "description": "a code-less error shows lastError unchanged, colons included",
+      "input": { "status": { "state": "error", "lastError": "Plugin bridge failed: see the log" }, "locale": "en" },
+      "expect": { "label": "Error", "detail": "Plugin bridge failed: see the log" }
+    },
+    {
+      "description": "host-side off pattern: no code, a host constant as lastError (es)",
+      "input": { "status": { "state": "off", "lastError": "Add an mcpwarp token in the settings to go online." }, "locale": "es" },
+      "expect": { "label": "Desactivado", "detail": "Add an mcpwarp token in the settings to go online." }
+    },
+    {
+      "description": "an unknown code falls back to lastError",
+      "input": { "status": { "state": "connecting", "code": "SOMETHING_NEW", "lastError": "Waiting for the edge." }, "locale": "en" },
+      "expect": { "label": "Connecting…", "detail": "Waiting for the edge." }
+    },
+    {
+      "description": "other codes show only the sentence, never lastError (es)",
+      "input": { "status": { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." }, "locale": "es" },
+      "expect": { "label": "Conectando…", "detail": "Conexión perdida, reconectando" }
+    },
+    {
+      "description": "disabled/DISABLED: the sentence equals the label, so detail is left out (es)",
+      "input": { "status": { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." }, "locale": "es" },
+      "expect": { "label": "Desactivado en el panel de mcpwarp" }
+    },
+    {
+      "description": "conflict/TAKEN_OVER: detail left out, equal to the label (ja)",
+      "input": { "status": { "state": "conflict", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." }, "locale": "ja" },
+      "expect": { "label": "別のインスタンスがこの名前を取得しました" }
+    },
+    {
+      "description": "a code-less lastError equal to the label is left out",
+      "input": { "status": { "state": "off", "lastError": "Off" }, "locale": "en" },
+      "expect": { "label": "Off" }
+    },
+    {
+      "description": "zh-CN exact: RETRYING with the full-width comma",
+      "input": { "status": { "state": "connecting", "code": "RETRYING", "lastError": "Can't reach mcpwarp; retrying." }, "locale": "zh-CN" },
+      "expect": { "label": "正在连接…", "detail": "连接失败，正在重试" }
+    },
+    {
+      "description": "'zh' resolves to zh-CN by language",
+      "input": { "status": { "state": "error", "code": "QUOTA_EXCEEDED", "lastError": "Your mcpwarp account has no services left in its quota." }, "locale": "zh" },
+      "expect": { "label": "错误", "detail": "已达到套餐限额" }
+    },
+    {
+      "description": "'ZH_tw': '_' is read as '-', the tag lowercased, and it resolves to zh-CN by language",
+      "input": { "status": { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }, "locale": "ZH_tw" },
+      "expect": { "label": "在线" }
+    },
+    {
+      "description": "'fr-CA' resolves to fr by language",
+      "input": { "status": { "state": "error", "code": "UNAUTHORIZED", "lastError": "The token was rejected." }, "locale": "fr-CA" },
+      "expect": { "label": "Erreur", "detail": "Jeton d'accès refusé" }
+    },
+    {
+      "description": "' de-AT ' is trimmed and resolves to de by language",
+      "input": { "status": { "state": "error", "code": "UNSUPPORTED_VERSION", "lastError": "This SDK version is no longer supported; please update." }, "locale": " de-AT " },
+      "expect": { "label": "Fehler", "detail": "Plugin-Update erforderlich" }
+    },
+    {
+      "description": "an exact tag matches case-insensitively",
+      "input": { "status": { "state": "error", "code": "CONFLICT", "lastError": "The name is in use by another server." }, "locale": "ZH-cn" },
+      "expect": { "label": "错误", "detail": "名称已被占用" }
+    },
+    {
+      "description": "an unknown locale is en",
+      "input": { "status": { "state": "error", "code": "DISCONNECTED_FATAL", "lastError": "The connection to mcpwarp failed." }, "locale": "pt-BR" },
+      "expect": { "label": "Error", "detail": "Connection to mcpwarp failed" }
+    },
+    {
+      "description": "no locale is en",
+      "input": { "status": { "state": "error", "code": "USERNAME_REQUIRED", "lastError": "Choose a username in your mcpwarp account first." }, "locale": null },
+      "expect": { "label": "Error", "detail": "Set a username in your mcpwarp account" }
+    },
+    {
+      "description": "connecting with INTERNAL in de",
+      "input": { "status": { "state": "connecting", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." }, "locale": "de" },
+      "expect": { "label": "Verbinden…", "detail": "Unerwarteter Fehler" }
+    },
+    {
+      "description": "a plain connecting status in fr has no detail",
+      "input": { "status": { "state": "connecting" }, "locale": "fr" },
+      "expect": { "label": "Connexion…" }
+    }
+  ]
+}

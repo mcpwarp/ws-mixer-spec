@@ -1,0 +1,23 @@
+{
+  "description": "enabled:false, or enabled with a token that trims to empty, is off without dialing and without INVALID_CONFIG whatever the other fields hold (MCPWARP.md section 6); off -> off is no snapshot. Then enabling goes online and disabling an online tunnel goes off.",
+  "config": { "enabled": false, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "configure": { "enabled": true, "token": "" } },
+    { "configure": { "enabled": true, "token": "   " } },
+    { "configure": { "enabled": true, "token": "", "name": null } },
+    { "configure": { "enabled": false, "token": null, "name": null } },
+    { "configure": { "enabled": true } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "configure": { "enabled": false } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "off" }
+  ],
+  "expectDials": 1
+}

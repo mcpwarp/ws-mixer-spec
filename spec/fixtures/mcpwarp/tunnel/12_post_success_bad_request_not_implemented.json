@@ -1,0 +1,35 @@
+{
+  "description": "D-2026-10-14-04 (post-success refusal rule): BAD_REQUEST or NOT_IMPLEMENTED on a re-register after an earlier success MUST NOT leave the tunnel at connecting; it goes to state error with the first-register mapping (INTERNAL). Deviation from ws-mixer-js HEAD, which stays at connecting with code INTERNAL.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "BAD_REQUEST", "message": "bad request" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disabled": { "reason": "disabled" } },
+    { "enabled": {} },
+    { "register_error": { "code": "NOT_IMPLEMENTED", "message": "not implemented" } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "error", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+    { "state": "connecting" },
+    { "state": "error", "code": "INTERNAL", "lastError": "Something went wrong; the log has the details." }
+  ],
+  "expectDials": 3
+}

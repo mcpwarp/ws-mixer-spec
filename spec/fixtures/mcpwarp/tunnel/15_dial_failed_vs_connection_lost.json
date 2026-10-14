@@ -1,0 +1,30 @@
+{
+  "description": "Q7, RETRYING vs DISCONNECTED by cause: a failed dial with no connection lost is connecting + RETRYING (dial lastError); a lost connection with a reconnect pending is connecting + DISCONNECTED, and failed redials after it keep DISCONNECTED (no snapshot).",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "dial_failed": {} },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "dial_failed": {} },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "dial_failed": {} },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "connecting", "code": "RETRYING", "lastError": "Can't reach mcpwarp; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 5
+}

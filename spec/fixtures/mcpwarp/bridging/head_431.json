@@ -1,0 +1,12 @@
+{
+  "description": "A request head (request line plus header block) over 64 KiB is answered 431 {\"error\":\"request head too large\"} before the path is looked at. The edge writes the head; the cap applies to what arrives on the stream. MCPWARP.md §4 limits",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\nx-padding: <PAD>\r\nContent-Length: 0\r\n\r\n",
+  "inExpand": { "<PAD>": { "repeat": "a", "count": 65536 } },
+  "upstream": null,
+  "out": "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: application/json\r\nContent-Length: 34\r\n\r\n{\"error\":\"request head too large\"}",
+  "notes": "`inExpand` keeps the fixture readable: replace the marker with 65536 copies of \"a\" before writing `in`. The SDK MAY answer as soon as 65536 head bytes arrived without a blank line. A head that does not complete within 10000 ms is RESET with CANCEL instead (no response)."
+}

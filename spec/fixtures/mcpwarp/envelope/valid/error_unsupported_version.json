@@ -1,0 +1,7 @@
+{
+  "description": "error UNSUPPORTED_VERSION, the tunnel's answer to an envelope with v other than 1: fatal for the agent. MCPWARP.md §2",
+  "op": "error",
+  "message": { "v": 1, "op": "error", "code": "UNSUPPORTED_VERSION", "message": "unsupported version 2" },
+  "schema_valid": true,
+  "wire_valid": true
+}

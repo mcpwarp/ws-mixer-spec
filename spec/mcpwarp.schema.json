@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mcpwarp.io/mcpwarp/v1/mcpwarp.schema.json",
+  "title": "mcpwarp envelope ops",
+  "description": "Strict, test-time-only conformance oracle for the 8 mcpwarp envelope ops defined in docs/MCPWARP.md §2. An instance is the value of `body.mcpwarp` inside a ws-mixer `app` control message (WIRE.md §2.7), not the `app` message itself. Never linked into production SDK code. additionalProperties:false is stricter than the receiver: the §2 decode rules ignore unknown fields, default absent or null lists to [], decode `created: null` as false, and pass unknown register/app error codes through, so this schema rejects what a decoder tolerates in order to catch typos. `enum`, `minItems` and `maxItems` are stated here for readers and real validators; spec/tools/check-fixtures.mjs enforces them in code because its validator subset ignores them.",
+  "oneOf": [
+    { "$ref": "#/$defs/register" },
+    { "$ref": "#/$defs/unregister" },
+    { "$ref": "#/$defs/registered" },
+    { "$ref": "#/$defs/unregistered" },
+    { "$ref": "#/$defs/disable" },
+    { "$ref": "#/$defs/enable" },
+    { "$ref": "#/$defs/conflict" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "register": {
+      "$anchor": "register",
+      "title": "register",
+      "description": "Agent -> edge, sent after every welcome (and after enable). The SDK sends exactly one service per message. MCPWARP.md §2, §3.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op", "services"],
+      "properties": {
+        "v": { "type": "integer", "const": 1 },
+        "op": { "const": "register" },
+        "services": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "kind"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 30,
+                "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+                "description": "SERVICE_NAME_RE, at most SERVICE_NAME_MAX (30) characters; a name the edge rejects comes back as registered.errors[] INVALID_NAME"
+              },
+              "kind": { "type": "string", "enum": ["http", "stdio"] }
+            }
+          }
+        }
+      }
+    },
+    "unregister": {
+      "$anchor": "unregister",
+      "title": "unregister",
+      "description": "Agent -> edge, sent by close() only when a register went out on the live connection. MCPWARP.md §2, §3.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op", "services"],
+      "properties": {
+        "v": { "type": "integer", "const": 1 },
+        "op": { "const": "unregister" },
+        "services": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 30, "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" }
+            }
+          }
+        }
+      }
+    },
+    "registered": {
+      "$anchor": "registered",
+      "title": "registered",
+      "description": "Edge -> agent, reply to register. Decode rules (MCPWARP.md §2): absent or null `services`/`errors` -> []; `url` is required and non-empty (an absent or empty url is MALFORMED_ENVELOPE); `created` absent or null -> false; null in an optional string -> MALFORMED_ENVELOPE.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op"],
+      "properties": {
+        "v": { "type": "integer", "const": 1 },
+        "op": { "const": "registered" },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "id", "url"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 30, "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" },
+              "id": { "type": "string", "description": "server id; becomes handle.serverId" },
+              "url": { "type": "string", "minLength": 1, "description": "public URL of the service; becomes handle.url, never \"\"" },
+              "created": { "type": "boolean", "description": "true only when this register created the service" }
+            }
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "code"],
+            "properties": {
+              "name": { "type": "string", "description": "echoes the requested name, so it is not held to SERVICE_NAME_RE (INVALID_NAME echoes an invalid one)" },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "INVALID_NAME", "USERNAME_REQUIRED", "QUOTA_EXCEEDED", "CONFLICT", "SERVER_DISABLED", "INTERNAL",
+                  "NO_RESPONDERS", "TIMEOUT", "ABORTED", "CONNECTION_LOST", "MALFORMED_REPLY", "BAD_REQUEST",
+                  "UNAUTHENTICATED", "FORBIDDEN", "NOT_IMPLEMENTED", "UNAVAILABLE", "SERVICE_ERROR"
+                ],
+                "description": "RegisterErrorCode; a decoder passes an unknown code through (treated like BAD_REQUEST)"
+              },
+              "message": { "type": "string", "description": "default \"\"" },
+              "id": { "type": "string", "description": "server id; carried by SERVER_DISABLED" }
+            }
+          }
+        }
+      }
+    },
+    "unregistered": {
+      "$anchor": "unregistered",
+      "title": "unregistered",
+      "description": "Edge -> agent, reply to unregister. Absent or null `services` -> []; `services[].id` defaults to \"\". MCPWARP.md §2.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op"],
+      "properties": {
+        "v": { "type": "integer", "const": 1 },
+        "op": { "const": "unregistered" },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 30, "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" },
+              "id": { "type": "string", "description": "default \"\"" }
+            }
+          }
+        }
+      }
+    },
+    "disable": {
+      "$anchor": "disable",
+      "title": "disable",
+      "description": "Edge -> agent, unsolicited: the service was disabled in the dashboard. MCPWARP.md §2, §3.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op", "id"],
+      "properties": {
+        "v": { "type": "integer", "const": 1 },
+        "op": { "const": "disable" },
+        "id": { "type": "string", "description": "server id" },
+        "reason": { "type": "string", "description": "default \"disabled\"" }
+      }
+    },
+    "enable": {
+      "$anchor": "enable",
+      "title": "enable",
+      "description": "Edge -> agent, unsolicited: the service was re-enabled; the agent registers again. Matched by name. MCPWARP.md §2, §3.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op", "id", "name"],
+      "properties": {
+        "v": { "type": "integer", "const": 1 },
+        "op": { "const": "enable" },
+        "id": { "type": "string", "description": "server id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 30, "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" }
+      }
+    },
+    "conflict": {
+      "$anchor": "conflict",
+      "title": "conflict",
+      "description": "Edge -> agent (the old holder), unsolicited: another connection registered the same (token subject, name). Matched by name or server id; sticky; the old holder never re-registers. MCPWARP.md §3.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op", "id", "name"],
+      "properties": {
+        "v": { "type": "integer", "const": 1 },
+        "op": { "const": "conflict" },
+        "id": { "type": "string", "description": "server id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 30, "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" },
+        "reason": { "type": "string", "description": "default \"taken_over\"" }
+      }
+    },
+    "error": {
+      "$anchor": "error",
+      "title": "error",
+      "description": "Edge -> agent, an app-level error about the last op. UNSUPPORTED_VERSION is fatal; OVERLOADED re-sends the outstanding op after 1000 ms; the rest are non-fatal. MCPWARP.md §2.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "op", "code"],
+      "properties": {
+        "v": { "type": "integer", "const": 1 },
+        "op": { "const": "error" },
+        "code": {
+          "type": "string",
+          "enum": ["BAD_REQUEST", "UNSUPPORTED_VERSION", "UNKNOWN_OP", "TOO_MANY_SERVICES", "OVERLOADED", "CONNECTION_LIMIT"],
+          "description": "AppErrorCode; a decoder passes an unknown code through as a non-fatal error"
+        },
+        "message": { "type": "string", "description": "default \"\"" }
+      }
+    }
+  }
+}

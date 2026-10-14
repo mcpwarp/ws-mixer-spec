@@ -1,0 +1,28 @@
+{
+  "description": "disable while online -> disabled/DISABLED; a drain while disabled re-registers on the replacement, which is refused SERVER_DISABLED (still disabled, no snapshot); the drained connection's end does not move the status (it ends after the replacement's welcome: T38; before that welcome it would be T44, see 29/30); enable -> connecting -> registered -> online.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "disabled": { "reason": "disabled" } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "SERVER_DISABLED", "message": "server disabled", "id": "srv_notes" } },
+    { "disconnect": { "conn": 1, "fatal": false, "code": "GOING_AWAY", "wsCode": 4012 } },
+    { "enabled": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 2
+}

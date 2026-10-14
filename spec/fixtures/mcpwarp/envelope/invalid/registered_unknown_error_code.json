@@ -1,0 +1,13 @@
+{
+  "description": "registered.errors[] with a code outside the 17 RegisterErrorCode values: rejected by the strict schema's enum (enforced in code by check-fixtures.mjs); the decoder passes it through, and the agent treats it like BAD_REQUEST (fatal before the first registration). MCPWARP.md §2 codes table",
+  "op": "registered",
+  "message": {
+    "v": 1,
+    "op": "registered",
+    "services": [],
+    "errors": [{ "name": "anki", "code": "RATE_LIMITED", "message": "slow down" }]
+  },
+  "schema_valid": false,
+  "wire_valid": true,
+  "expect": { "error_code": "SCHEMA_ENUM", "message_contains": "RATE_LIMITED" }
+}

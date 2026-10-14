@@ -1,0 +1,8 @@
+{
+  "description": "register with a name ending in a dash: dashes are allowed only inside the name (SERVICE_NAME_RE). MCPWARP.md §2",
+  "op": "register",
+  "message": { "v": 1, "op": "register", "services": [{ "name": "anki-", "kind": "http" }] },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "INVALID_NAME", "message_contains": "name" }
+}

@@ -1,0 +1,7 @@
+{
+  "description": "unregistered answering an unregister, naming the service and its server id. MCPWARP.md §2",
+  "op": "unregistered",
+  "message": { "v": 1, "op": "unregistered", "services": [{ "name": "anki", "id": "srv_anki" }] },
+  "schema_valid": true,
+  "wire_valid": true
+}

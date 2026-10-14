@@ -1,0 +1,25 @@
+{
+  "description": "Target mode: the request is forwarded to the local server with Host removed, x-forwarded-host = public Host, x-forwarded-proto = https, accept-encoding = identity and the incoming query appended to the target URL. The local server sends no response headers within targetTimeoutMs, so the SDK answers 504 {\"error\":\"local server timed out\"}. MCPWARP.md §4",
+  "sdkState": "online",
+  "mode": "target",
+  "target": "http://127.0.0.1:3000/mcp",
+  "limits": { "maxRequestBodyBytes": 4194304, "targetTimeoutMs": 1000 },
+  "handler": { "behaviour": "hang" },
+  "in": "POST /mcp?x=1 HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\naccept-encoding: gzip\r\ncontent-type: application/json\r\nmcp-session-id: abc\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "http://127.0.0.1:3000/mcp?x=1",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "accept-encoding": "identity",
+      "content-type": "application/json",
+      "mcp-session-id": "abc",
+      "user-agent": "Go-http-client/1.1",
+      "x-forwarded-host": "notes-tester.mcpwarp.test",
+      "x-forwarded-proto": "https"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+  },
+  "out": "HTTP/1.1 504 Gateway Timeout\r\nContent-Type: application/json\r\nContent-Length: 34\r\n\r\n{\"error\":\"local server timed out\"}",
+  "notes": "In target mode `handler` describes the local server. targetTimeoutMs bounds only the wait for response headers; the SDK SHOULD abort the upstream fetch when the runtime has a cancel signal and MAY let it settle otherwise."
+}

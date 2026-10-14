@@ -1,0 +1,30 @@
+{
+  "description": "stop() goes off and the tunnel stays reusable: the same config then restarts. stop() during the raw dial: the late socket is closed by the SDK, never shown (no online), no redial; a later configure() dials afresh.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "stop": {} },
+    { "configure": {} },
+    { "stop": {} },
+    { "connected": { "conn": 2 } },
+    { "tick": { "ms": 120000 } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 3
+}

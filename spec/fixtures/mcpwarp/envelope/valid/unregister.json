@@ -1,0 +1,7 @@
+{
+  "description": "unregister as close() sends it: name only, no kind. Byte-exact with encodeUnregister(\"anki\"). MCPWARP.md §2, §3",
+  "op": "unregister",
+  "message": { "v": 1, "op": "unregister", "services": [{ "name": "anki" }] },
+  "schema_valid": true,
+  "wire_valid": true
+}

@@ -1,0 +1,13 @@
+{
+  "description": "registered service without url: url is required, so the decoder raises MALFORMED_ENVELOPE (a non-fatal error event) instead of defaulting it to \"\"; handle.url is never \"\". MCPWARP.md §2 decode rules (I9)",
+  "op": "registered",
+  "message": {
+    "v": 1,
+    "op": "registered",
+    "services": [{ "name": "anki", "id": "srv_anki", "created": true }],
+    "errors": []
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "registered.services[].url" }
+}

@@ -1,0 +1,36 @@
+{
+  "description": "T16: while online or disabled, a transient register refusal or app error OVERLOADED on a drain replacement's register changes nothing (no RETRYING snapshot); onRetry still fires and the register is re-sent after 1 s. Online: UNAVAILABLE, then OVERLOADED, then registered with the same url (no snapshot). Disabled: TIMEOUT, then OVERLOADED, then SERVER_DISABLED (still disabled, no snapshot).",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "UNAVAILABLE", "message": "backend hiccup" } },
+    { "retry": { "delayMs": 1000, "cause": "register" } },
+    { "app_error": { "code": "OVERLOADED", "message": "too many messages in flight" } },
+    { "retry": { "delayMs": 1000, "cause": "overloaded" } },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disabled": { "reason": "disabled" } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "register_error": { "code": "TIMEOUT", "message": "rpc timeout" } },
+    { "retry": { "delayMs": 1000, "cause": "register" } },
+    { "app_error": { "code": "OVERLOADED", "message": "too many messages in flight" } },
+    { "retry": { "delayMs": 1000, "cause": "overloaded" } },
+    { "register_error": { "code": "SERVER_DISABLED", "message": "server disabled", "id": "srv_notes" } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." }
+  ],
+  "expectDials": 3
+}

@@ -22,7 +22,7 @@ const SPEC_DIR = path.resolve(__dirname, "..");
 const STRICT_PATH = path.join(SPEC_DIR, "control.schema.json");
 const RELAXED_PATH = path.join(SPEC_DIR, "control.relaxed.schema.json");
 
-function stripAdditionalPropertiesFalse(node) {
+export function stripAdditionalPropertiesFalse(node) {
   if (Array.isArray(node)) {
     return node.map(stripAdditionalPropertiesFalse);
   }

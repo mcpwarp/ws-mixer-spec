@@ -1,0 +1,11 @@
+{
+  "description": "registered after a reconnect or drain re-register: the service already existed, `created` omitted (decodes as false) and `errors` omitted (decodes as []). MCPWARP.md §2 decode rules",
+  "op": "registered",
+  "message": {
+    "v": 1,
+    "op": "registered",
+    "services": [{ "name": "anki", "id": "srv_anki", "url": "https://anki-tester.mcpwarp.test/mcp" }]
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

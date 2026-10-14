@@ -1,0 +1,7 @@
+{
+  "description": "error OVERLOADED: the agent re-sends the outstanding register (or, while closing, unregister) once after 1000 ms if still connected. MCPWARP.md §2",
+  "op": "error",
+  "message": { "v": 1, "op": "error", "code": "OVERLOADED", "message": "too many app messages in flight" },
+  "schema_valid": true,
+  "wire_valid": true
+}

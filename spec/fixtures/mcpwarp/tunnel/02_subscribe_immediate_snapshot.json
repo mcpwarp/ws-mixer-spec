@@ -1,0 +1,22 @@
+{
+  "description": "subscribe() calls the new listener at once with the current snapshot (off before any configure, then connecting, then online), MCPWARP.md section 6 status/subscribe.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "subscribe": {} },
+    { "configure": {} },
+    { "subscribe": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "subscribe": {} }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 1
+}

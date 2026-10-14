@@ -1,0 +1,8 @@
+{
+  "description": "error with a numeric code: app error codes are strings, unlike ws-mixer's numeric error.code. MCPWARP.md §2 decode rules",
+  "op": "error",
+  "message": { "v": 1, "op": "error", "code": 400, "message": "bad request" },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "error.code must be a string" }
+}

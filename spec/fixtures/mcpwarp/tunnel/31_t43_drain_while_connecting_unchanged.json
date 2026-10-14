@@ -1,0 +1,21 @@
+{
+  "description": "T43: a drain while connecting (register outstanding, no answer yet) changes nothing; as T31 the SDK dials a replacement, which registers on its welcome -> online. The drained connection's end after the replacement's welcome is T38 (no snapshot).",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "disconnect": { "conn": 1, "fatal": false, "code": "GOING_AWAY", "wsCode": 4012 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 2
+}

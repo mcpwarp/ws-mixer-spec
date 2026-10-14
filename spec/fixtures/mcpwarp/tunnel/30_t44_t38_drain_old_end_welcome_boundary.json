@@ -1,0 +1,30 @@
+{
+  "description": "The welcome boundary of the drain rule (§6.8). The replacement is upgraded but has no welcome yet when the drained connection ends: T44, connecting + DISCONNECTED; its welcome and registered then bring the tunnel online. On the next drain the replacement has received welcome and is still registering when the drained connection ends: T38, no snapshot, and its registered with the same url is none either.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": {} },
+    { "disconnect": { "conn": 1, "fatal": false, "code": "GOING_AWAY", "wsCode": 4012 } },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "disconnect": { "conn": 2, "fatal": false, "code": "GOING_AWAY", "wsCode": 4012 } },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 3
+}

@@ -1,0 +1,16 @@
+{
+  "description": "configure() serialization, MCPWARP.md section 6: three configure() calls back to back; superseded configs never dial, only the last one does, and the status shows one connecting.",
+  "config": { "enabled": true, "token": "t", "name": "alpha" },
+  "events": [
+    { "burst": [{ "configure": { "name": "alpha" } }, { "configure": { "name": "bravo" } }, { "configure": { "name": "charlie" } }] },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://charlie-tester.mcpwarp.test/mcp", "id": "srv_charlie", "created": true }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://charlie-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 1
+}

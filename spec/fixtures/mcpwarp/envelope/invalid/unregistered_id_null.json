@@ -1,0 +1,8 @@
+{
+  "description": "unregistered.services[].id null: null in an optional string field is MALFORMED_ENVELOPE, not the default \"\". MCPWARP.md §2 decode rules (I11)",
+  "op": "unregistered",
+  "message": { "v": 1, "op": "unregistered", "services": [{ "name": "anki", "id": null }] },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "unregistered.services[].id must be a string" }
+}

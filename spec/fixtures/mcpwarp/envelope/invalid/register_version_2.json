@@ -1,0 +1,8 @@
+{
+  "description": "register with v 2: the tunnel answers op:error UNSUPPORTED_VERSION, which is fatal for the agent. MCPWARP.md §2",
+  "op": "register",
+  "message": { "v": 2, "op": "register", "services": [{ "name": "anki", "kind": "http" }] },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "UNSUPPORTED_VERSION", "message_contains": "v" }
+}

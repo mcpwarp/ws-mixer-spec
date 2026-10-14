@@ -1,0 +1,22 @@
+{
+  "description": "A JSON-RPC notification is forwarded like any other POST: the SDK does not parse JSON-RPC, does not answer 202 itself and does not inject, strip or generate Mcp-Session-Id. 202 for notifications is the MCP handler's job, so with an echo handler the response is the handler's 200. MCPWARP.md §4 (I1)",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nmcp-session-id: abc\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 54\r\n\r\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "https://notes-tester.mcpwarp.test/mcp",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "notes-tester.mcpwarp.test",
+      "mcp-session-id": "abc",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}"
+  },
+  "out": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n36\r\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\r\n0\r\n\r\n",
+  "notes": "The same pass-through holds for GET without an SSE Accept (405 + Allow: POST is the handler's answer) and DELETE. Chunk boundaries are not normative."
+}

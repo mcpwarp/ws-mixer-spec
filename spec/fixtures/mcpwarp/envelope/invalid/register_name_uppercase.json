@@ -1,0 +1,8 @@
+{
+  "description": "register with a display-style name (upper case, space) that fails SERVICE_NAME_RE ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$. MCPWARP.md §2",
+  "op": "register",
+  "message": { "v": 1, "op": "register", "services": [{ "name": "Anki MCP", "kind": "http" }] },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "INVALID_NAME", "message_contains": "name" }
+}

@@ -1,0 +1,7 @@
+{
+  "description": "enable: matched by service name (the id is adopted as server id); the agent sends register again. MCPWARP.md §2, §3",
+  "op": "enable",
+  "message": { "v": 1, "op": "enable", "id": "srv_anki", "name": "anki" },
+  "schema_valid": true,
+  "wire_valid": true
+}

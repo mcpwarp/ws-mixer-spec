@@ -1,0 +1,12 @@
+{
+  "description": "registered service with an extra field: rejected by the strict test-time schema, ignored by the decoder. MCPWARP.md §2",
+  "op": "registered",
+  "message": {
+    "v": 1,
+    "op": "registered",
+    "services": [{ "name": "anki", "id": "srv_anki", "url": "https://anki-tester.mcpwarp.test/mcp", "created": false, "region": "eu" }]
+  },
+  "schema_valid": false,
+  "wire_valid": true,
+  "expect": { "error_code": "SCHEMA_ADDITIONAL_PROPERTIES", "message_contains": "region" }
+}

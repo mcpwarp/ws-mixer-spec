@@ -1,0 +1,8 @@
+{
+  "description": "unregister service carrying kind, which only register has: rejected by the strict test-time schema, tolerated by a receiver that ignores unknown fields. MCPWARP.md §2",
+  "op": "unregister",
+  "message": { "v": 1, "op": "unregister", "services": [{ "name": "anki", "kind": "http" }] },
+  "schema_valid": false,
+  "wire_valid": true,
+  "expect": { "error_code": "SCHEMA_ADDITIONAL_PROPERTIES", "message_contains": "kind" }
+}
