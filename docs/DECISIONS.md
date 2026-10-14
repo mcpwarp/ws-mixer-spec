@@ -257,7 +257,8 @@ upgrade headers at all; `D-2026-10-13-02` was found while bringing ws-mixer-serv
 
 Project owner's approvals. `D-2026-10-14-01` is driven by the Go, Rust and Python SDKs that need a mcpwarp layer
 to implement against; `D-2026-10-14-02` through `-05` resolve inconsistencies found while specifying that layer
-from ws-mixer-js HEAD (`d45d3b4`, `SDK_VERSION` `0.10.1`) and its docs; approved by Anatoly.
+from ws-mixer-js HEAD (`d45d3b4`, `SDK_VERSION` `0.10.1`) and its docs; `D-2026-10-14-06` collects the points
+where the ws-mixer-js session implementing spec `v0.6.0` found `MCPWARP.md` silent; approved by Anatoly.
 
 - **D-2026-10-14-01** — The mcpwarp application layer is specified in this repo, as
   [`MCPWARP.md`](./MCPWARP.md) with `spec/mcpwarp.schema.json` and `spec/fixtures/mcpwarp/`, in two tiers.
@@ -320,3 +321,53 @@ from ws-mixer-js HEAD (`d45d3b4`, `SDK_VERSION` `0.10.1`) and its docs; approved
   SDK-local edit. Reason: the same status must read the same in every SDK and host, and the tables were
   otherwise a TypeScript literal that each port would retype by hand. Changed: `MCPWARP.md` §7, §10.5. See
   [`MCPWARP.md`](./MCPWARP.md#7-status-text-tier-2).
+- **D-2026-10-14-06** — v0.6.1 clarifications from the JS implementation; each ruling below is now normative
+  text. Ships as spec `v0.6.1`. Reason: the ws-mixer-js session implementing spec `v0.6.0` found the spec
+  silent on these points, so each SDK would otherwise have picked its own answer. Profile tier:
+  - P1 `onRetry` for an `OVERLOADED` re-send: `attempt` `1` for the first re-send after the refusal, +1 per
+    consecutive re-send, reset by a successful `registered` (§5.9).
+  - P2 drain replacement dial: `onRetry` `{attempt: 0, delayMs: <jitter>, reason: "drain"}`; a hand-over is
+    not a failure, the backoff counter is not consulted (§5.9). `delayMs` is the actual WIRE.md §2.9 jitter
+    waited before the dial (`0–2000 ms`), not `0`; the tunnel runner checks it ≤ the `retry` event's
+    `delayMs`.
+  - P3 `drain{replaced}` take-over with no known server id: `serverId` omitted, never `""` (§5.4, §5.6; §11
+    row 16).
+  - P4 a failure after the upgrade but before `welcome` (handshake failure, welcome timeout) is a failed dial:
+    T27–T29, never T30 (§6.7 Pre-`welcome` failure; fixture `tunnel/34_t27_pre_welcome_failure_retrying`).
+  - P5 `<CODE>: <message>` log lines: `CODE` is the `McpwarpError` code when the failure has one, else the
+    `TunnelStatusCode` (§6.9).
+  - P6 `registered`/`disable`/`enable`/`conflict` on a superseded connection after the replacement's `welcome`
+    are stale: the handle ignores them, so the tunnel never sees them (§2.7, §5.9, §6.8 Drain, T38; fixture
+    `tunnel/35_t38_stale_app_messages_ignored`).
+  - P7 the one-shot token-refresh redial is a scheduled reconnect: the `onRetry` payload is exactly
+    `{attempt: 1, delayMs: 0, reason: "token-refresh"}` (§5.9; §11 row 17).
+  - P8 a take-over closes the taken-over connection immediately, on a `conflict` (T34) and on a
+    `drain{replaced}` (T45) alike: no `unregister`, in-flight streams cut, sticky until the next `configure()`
+    (§3.3 Sticky, §5.9 Drain, §6.8 Take-over close). ws-mixer-js already does this for `conflict`
+    (`conflicted()` → `detach()` → `handle.close()`).
+  - P9 `tunnel/README.md` gains "Running the fixtures": observing `onRetry`, driving `disconnect.fatal`, the
+    exact snapshot comparison rule.
+
+  Wire tier:
+  - W1 §2.8 rule 8 (`registered.services[].url` non-empty) holds for every entry, other names included:
+    validation is syntactic over the whole message; a violation is `MALFORMED_ENVELOPE` for all of it (§2.3,
+    §2.8).
+  - W2 its message is `"registered.services[].url must be a non-empty string"`; fixtures' `message_contains`
+    is a substring match, and they use a prefix (§2.8 rule 9).
+  - W3 an adapter MAY stream the request body; the cap still applies (overshoot ≤ one transport chunk,
+    ≤ 64 KiB). Three-way: no response byte → `413`; head written, response unfinished → RESET `CANCEL`;
+    response complete → CLOSE with the response intact (a RESET there can drop bytes the edge has not
+    forwarded; as W5) (§4.2; fixture `bridging/body_413_streamed_reset`, new bridging keys `inRest`,
+    `outReset`). `*_reset` fixtures apply only to streaming adapters; a buffering-only runner skips them with
+    a note (§10.3).
+  - W4 after any SDK-generated refusal (`404`, `503`, `413`, `500`) with an unread body the agent drains it
+    (window updates) and CLOSEs, never RESETs; the edge's own body cap bounds the drain (§4.4 Ending a refused
+    stream).
+  - W5 a body that turns out malformed after a refusal was written still ends with CLOSE, not RESET; after a
+    streaming app's own response head it follows the W3 table (§4.4).
+  - W6 how a runner reaches each bridging `sdkState` (§10.3, `spec/README.md`); fixtures
+    `bridging/disabled_chunked_body_503`, `bridging/head_mcp_503`.
+
+  Changed: `MCPWARP.md` §2.3, §2.7, §2.8, §3.3, §4.2, §4.4, §5.4, §5.6, §5.9, §6.7, §6.8, §6.9, §10.3, §10.4,
+  §11 rows 16–17; `spec/README.md`; `tunnel/README.md`; `check-fixtures.mjs` (`inRest`, `outReset`, head-only
+  `HEAD` replies); `COUNTS.json`. See [`MCPWARP.md`](./MCPWARP.md).

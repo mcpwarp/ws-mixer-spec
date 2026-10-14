@@ -1,0 +1,11 @@
+{
+  "description": "While disabled, HEAD /mcp is answered 503 with the head of the {\"error\":\"service disabled\"} reply and no body: the same status line and headers, Content-Length included, as the GET/POST reply. MCPWARP.md §4.4, §4.5 (to HEAD the same head and no body)",
+  "sdkState": "disabled",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "HEAD /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\nuser-agent: Go-http-client/1.1\r\n\r\n",
+  "upstream": null,
+  "out": "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 28\r\n\r\n",
+  "notes": "Content-Length is the length the body would have had (28); no body bytes follow it."
+}

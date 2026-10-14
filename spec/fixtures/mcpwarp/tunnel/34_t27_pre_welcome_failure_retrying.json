@@ -1,0 +1,42 @@
+{
+  "description": "Pre-welcome failure (MCPWARP.md §6.7, D-2026-10-14-06): a non-fatal failure after the upgrade but before welcome is a failed dial, never a lost connection. A handshake-phase close (1006) from plain connecting -> connecting + RETRYING with the dial lastError (T27); a peer close 4001 while RETRYING keeps it (no snapshot) — the fixture injects that close as the stand-in for a pre-welcome failure such as the welcome timeout, since the SDK's own 10 s welcome timer is not driven by tick; after a lost connection a pre-welcome failure keeps DISCONNECTED (T28); a drain replacement failing before its welcome leaves online alone (T29).",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "disconnect": { "fatal": false, "code": "PROTOCOL_ERROR", "wsCode": 4001 } },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "connected": {} },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": {} },
+    { "disconnect": { "conn": 6, "fatal": false, "code": "PROTOCOL_ERROR", "wsCode": 4001 } },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disconnect": { "conn": 5, "fatal": false, "code": "GOING_AWAY", "wsCode": 4012 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "connecting", "code": "RETRYING", "lastError": "Can't reach mcpwarp; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 7
+}

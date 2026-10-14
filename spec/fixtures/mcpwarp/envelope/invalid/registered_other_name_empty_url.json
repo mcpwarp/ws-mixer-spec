@@ -1,0 +1,15 @@
+{
+  "description": "registered with a valid entry for the agent's name (anki) plus an entry for another name (notes) with url \"\": validation is syntactic over the whole message, so the empty url of the other entry makes all of it MALFORMED_ENVELOPE, the valid entry included. MCPWARP.md §2.3, §2.8 (D-2026-10-14-06 W1, W2)",
+  "op": "registered",
+  "message": {
+    "v": 1,
+    "op": "registered",
+    "services": [
+      { "name": "anki", "id": "srv_anki", "url": "https://anki-tester.mcpwarp.test/mcp", "created": true },
+      { "name": "notes", "id": "srv_notes", "url": "", "created": false }
+    ]
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "registered.services[].url must be a non-empty string" }
+}

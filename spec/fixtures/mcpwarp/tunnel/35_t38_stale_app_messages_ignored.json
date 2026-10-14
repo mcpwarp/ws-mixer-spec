@@ -1,0 +1,28 @@
+{
+  "description": "T38 / §6.8 Drain (D-2026-10-14-06): once a drain replacement has received welcome, app messages still arriving on the drained connection (disable, enable, conflict, registered) are stale and ignored: no disabled, no re-register, no sticky conflict. Only the replacement's events move status (its disable -> disabled), and the drained connection's end changes nothing.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "drain": {} },
+    { "retry": { "delayMs": 2000, "cause": "drain" } },
+    { "connected": { "conn": 2 } },
+    { "welcome": { "conn": 2 } },
+    { "disabled": { "conn": 1, "reason": "disabled" } },
+    { "enabled": { "conn": 1 } },
+    { "conflict": { "conn": 1 } },
+    { "registered": { "conn": 1, "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "registered": { "conn": 2, "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disconnect": { "conn": 1, "fatal": false, "code": "GOING_AWAY", "wsCode": 4012 } },
+    { "disabled": { "conn": 2, "reason": "disabled" } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." }
+  ],
+  "expectDials": 2
+}

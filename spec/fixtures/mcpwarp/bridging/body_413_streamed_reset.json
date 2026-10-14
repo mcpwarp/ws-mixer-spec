@@ -1,0 +1,22 @@
+{
+  "description": "A streaming adapter (MCPWARP.md §4.2 streaming adapters, D-2026-10-14-06) hands the chunked body to the app as it arrives. The echo handler answers at once, so the response head is on the stream before the body is finished; the second chunk then takes the body to 20 bytes, over the 16-byte cap. This is the middle case of the three: the response head is out but the response is unfinished (the echoed body is still streaming). A 413 can no longer be sent, so the agent RESETs the stream with CANCEL (0x07) instead of CLOSE. (No response byte yet would be 413; a response already complete would be CLOSE with the response intact.)",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 16 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nTransfer-Encoding: chunked\r\n\r\na\r\n{\"jsonrpc\"\r\n",
+  "inRest": "a\r\n:\"2.0\",\"id\r\n0\r\n\r\n",
+  "upstream": {
+    "method": "POST",
+    "url": "https://notes-tester.mcpwarp.test/mcp",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "notes-tester.mcpwarp.test",
+      "user-agent": "Go-http-client/1.1"
+    }
+  },
+  "out": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n",
+  "outReset": { "code": 7 },
+  "notes": "Only for an adapter that streams the request body; a buffering adapter answers 413 before calling the app and is covered by body_413, and a runner that only drives a buffering path skips this fixture with a note. The echo response cannot finish before the request body does, so the cap always trips with the head out and the response unfinished. Here echo means the handler returns the request's body stream as its response body without reading it first. Write `in`, wait until the response head has arrived, then write `inRest` and CLOSE. Echoed chunk bytes after the head are not compared; the stream MUST end with RESET CANCEL, not CLOSE. The cap MAY overshoot by one transport chunk (at most 64 KiB) before it trips."
+}

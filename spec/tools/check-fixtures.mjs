@@ -804,9 +804,29 @@ function decodeChunked(buf) {
   }
 }
 
+// Chunk data bytes present in a prefix of a chunked body; a chunk cut short counts
+// the bytes that are there. Stops at the last chunk or an incomplete size line.
+function chunkedBytesSoFar(buf) {
+  let pos = 0;
+  let total = 0;
+  for (;;) {
+    const eol = buf.indexOf("\r\n", pos);
+    if (eol < 0) return total;
+    const size = parseInt(buf.subarray(pos, eol).toString("latin1").split(";")[0], 16);
+    if (!(size > 0)) return total;
+    pos = eol + 2;
+    const have = Math.min(size, buf.length - pos);
+    total += have;
+    if (have < size) return total;
+    pos += size + 2;
+  }
+}
+
 // Parses one HTTP/1.1 message as written on the stream. Header names are
 // lower-cased; framing follows Content-Length or chunked, else the body is empty.
-function parseHttpMessage(text, kind) {
+// headOnly: nothing may follow the head and its framing headers describe no
+// bytes here (a reply to HEAD, or the head before an outReset).
+function parseHttpMessage(text, kind, { headOnly = false } = {}) {
   const buf = Buffer.from(text, "utf8");
   const end = buf.indexOf("\r\n\r\n");
   if (end < 0) return { error: "no blank line (CRLF CRLF) ends the head" };
@@ -836,6 +856,15 @@ function parseHttpMessage(text, kind) {
   const cl = msg.get("content-length");
   const te = msg.get("transfer-encoding");
   if (cl.length && te.length) return { error: "both Content-Length and Transfer-Encoding" };
+  if (headOnly) {
+    if (cl.length && (cl.length !== 1 || !/^\d+$/.test(cl[0]))) return { error: `malformed Content-Length ${JSON.stringify(cl)}` };
+    if (te.length && (te.length !== 1 || te[0].toLowerCase() !== "chunked")) return { error: `unsupported Transfer-Encoding ${JSON.stringify(te)}` };
+    if (rest.length !== 0) return { error: `${rest.length} bytes after a head that must stand alone` };
+    if (cl.length) msg.contentLength = Number(cl[0]);
+    msg.chunked = te.length > 0;
+    msg.body = rest;
+    return msg;
+  }
   if (cl.length) {
     if (cl.length !== 1 || !/^\d+$/.test(cl[0])) return { error: `malformed Content-Length ${JSON.stringify(cl)}` };
     msg.contentLength = Number(cl[0]);
@@ -945,14 +974,32 @@ for (const file of listJsonFiles(bridgingDir)) {
       if (ok) inText = inText.replace(marker, spec.repeat.repeat(spec.count));
     }
   }
+  const inAlone = inText;
+  if ("inRest" in fx) {
+    check(typeof fx.inRest === "string" && fx.inRest.length > 0, `${rel}: inRest must be a non-empty string`);
+    if (typeof fx.inRest === "string") inText += fx.inRest;
+  }
+
+  // outReset: the stream ends with RESET(code) instead of CLOSE, and "out" is the
+  // response head written before it (MCPWARP.md §4.2 streaming adapters).
+  const outReset = "outReset" in fx;
+  if (outReset) {
+    const ok = isPlainObject(fx.outReset) && Object.keys(fx.outReset).length === 1 && Object.values(ERROR_CODES).includes(fx.outReset.code);
+    check(ok, `${rel}: outReset must be {code} with a WIRE.md §2.8 error code number`);
+  }
 
   check(/^\S+ \S+ HTTP\/1\.1\r\n/.test(inText), `${rel}: "in" must start with a request line ending in CRLF`);
   check(/^HTTP\/1\.1 \d{3} [^\r\n]+\r\n/.test(fx.out), `${rel}: "out" must start with a status line ending in CRLF`);
   const req = parseHttpMessage(inText, "request");
-  const res = parseHttpMessage(fx.out, "response");
-  if (req.error) check(false, `${rel}: "in": ${req.error}`);
-  if (res.error) check(false, `${rel}: "out": ${res.error}`);
-  if (req.error || res.error) continue;
+  if (req.error) {
+    check(false, `${rel}: "in": ${req.error}`);
+    continue;
+  }
+  const res = parseHttpMessage(fx.out, "response", { headOnly: outReset || req.method === "HEAD" });
+  if (res.error) {
+    check(false, `${rel}: "out": ${res.error}`);
+    continue;
+  }
 
   check(req.get("host").length === 1 && req.get("host")[0] !== "", `${rel}: "in" must carry exactly one non-empty Host`);
   check(req.get("authorization").length === 0, `${rel}: "in" carries Authorization, which the edge strips`);
@@ -960,8 +1007,12 @@ for (const file of listJsonFiles(bridgingDir)) {
   const base = path.basename(file, ".json");
   const fromName = /_(\d{3})$/.exec(base);
   const intended = fromName ? Number(fromName[1]) : BRIDGING_NAMED_STATUS[base];
-  check(intended !== undefined, `${rel}: file name must end in _<status> or be one of ${Object.keys(BRIDGING_NAMED_STATUS).join(", ")}`);
-  check(intended === undefined || res.status === intended, `${rel}: "out" status ${res.status} does not match the file name's ${intended}`);
+  if (outReset) {
+    check(base.endsWith("_reset"), `${rel}: a fixture with outReset is named *_reset`);
+  } else {
+    check(intended !== undefined, `${rel}: file name must end in _<status> or be one of ${Object.keys(BRIDGING_NAMED_STATUS).join(", ")}`);
+    check(intended === undefined || res.status === intended, `${rel}: "out" status ${res.status} does not match the file name's ${intended}`);
+  }
   check(REASON_PHRASES[res.status] === res.reason, `${rel}: reason phrase for ${res.status} must be ${JSON.stringify(REASON_PHRASES[res.status])}, got ${JSON.stringify(res.reason)}`);
 
   const expected = bridgingExpectedStatus(fx, req);
@@ -969,7 +1020,26 @@ for (const file of listJsonFiles(bridgingDir)) {
     check(false, `${rel}: ${expected.error}`);
     continue;
   }
-  check(res.status === expected.status, `${rel}: the MCPWARP.md §4 precedence rules give ${expected.status}, "out" has ${res.status}`);
+  if (outReset) {
+    // The only §4 RESET after response bytes: a streamed body over the cap (413 by
+    // precedence) once the app has already answered. CANCEL, chunked, response from the app.
+    check(expected.status === 413, `${rel}: outReset is only for a body over the cap after the response head (MCPWARP.md §4.2), but the precedence rules give ${expected.status}`);
+    check(fx.outReset.code === ERROR_CODES.CANCEL, `${rel}: a body cap that trips after response bytes RESETs with CANCEL (${ERROR_CODES.CANCEL}), got ${JSON.stringify(fx.outReset.code)}`);
+    check(req.chunked === true, `${rel}: only a chunked body can trip the cap after the app was called (a Content-Length over the cap is refused first)`);
+    check(typeof fx.inRest === "string", `${rel}: outReset needs inRest, written after the response head, so the head precedes the cap`);
+    if (typeof fx.inRest === "string") {
+      const cap = fx.limits.maxRequestBodyBytes ?? BRIDGING_DEFAULT_BODY_CAP;
+      const alone = Buffer.from(inAlone, "utf8");
+      const headEnd = alone.indexOf("\r\n\r\n");
+      check(headEnd >= 0, `${rel}: with outReset "in" alone must hold the whole request head`);
+      const soFar = headEnd < 0 ? 0 : chunkedBytesSoFar(alone.subarray(headEnd + 4));
+      check(soFar <= cap, `${rel}: with outReset the body bytes in "in" alone (${soFar}) must stay within the cap (${cap}), so the cap trips only once inRest arrives, after the response head`);
+    }
+    check(!SDK_ERROR_MESSAGES[res.status], `${rel}: with outReset "out" is the app's response head, not an SDK error reply (${res.status})`);
+    check(!fx.handler || fx.handler.behaviour !== "echo" || res.status === 200, `${rel}: an echo handler answers 200, "out" has ${res.status}`);
+  } else {
+    check(res.status === expected.status, `${rel}: the MCPWARP.md §4 precedence rules give ${expected.status}, "out" has ${res.status}`);
+  }
 
   if (SDK_ERROR_MESSAGES[res.status]) {
     const allowed = expected.message ? [expected.message] : SDK_ERROR_MESSAGES[res.status];
@@ -999,10 +1069,14 @@ for (const file of listJsonFiles(bridgingDir)) {
     check(up.method === req.method, `${rel}: upstream.method ${JSON.stringify(up.method)} != request method ${req.method}`);
     check(up.url === wantUrl, `${rel}: upstream.url must be ${wantUrl}, got ${JSON.stringify(up.url)}`);
     check(isPlainObject(up.headers) && sameJson(up.headers, wantHeaders), `${rel}: upstream.headers must be ${JSON.stringify(wantHeaders)}`);
-    const wantBody = req.method === "GET" || req.method === "HEAD" ? undefined : req.body.toString("utf8");
-    check(up.body === wantBody, `${rel}: upstream.body must be the request body unchanged${wantBody === undefined ? " (absent for GET/HEAD)" : ""}`);
+    if (outReset) {
+      check(!("body" in up), `${rel}: with outReset upstream.body is absent (the app reads a body stream that fails)`);
+    } else {
+      const wantBody = req.method === "GET" || req.method === "HEAD" ? undefined : req.body.toString("utf8");
+      check(up.body === wantBody, `${rel}: upstream.body must be the request body unchanged${wantBody === undefined ? " (absent for GET/HEAD)" : ""}`);
+    }
     if (res.status === 200 && fx.handler && fx.handler.behaviour === "echo") {
-      check(res.body.equals(req.body), `${rel}: an echo handler's response body must equal the request body`);
+      check(outReset || res.body.equals(req.body), `${rel}: an echo handler's response body must equal the request body`);
       check(res.get("content-type").join() === req.get("content-type").join(), `${rel}: an echo handler's response content-type must equal the request's`);
     }
   }

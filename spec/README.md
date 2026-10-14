@@ -288,23 +288,28 @@ One HTTP request on one stream, as raw HTTP/1.1 text with `\r\n` line ends:
 | Key | Meaning |
 |---|---|
 | `description`, `notes` | what the fixture pins and why |
-| `sdkState` | `online`, `disabled` or `closing` when the request arrives |
+| `sdkState` | `online`, `disabled` or `closing` when the request arrives. A runner gets there through the fake edge: `online` = the agent has received `registered` for its name; `disabled` = after a matching `disable` op on the live connection; `closing` = after `close()` was called but before the socket closed (the fake edge withholds `unregistered` and the close, and opens the stream in that window). MCPWARP.md §10.3 |
 | `mode` | `handler` or `target`; `target` mode adds `target`, the local server URL |
 | `limits` | `maxRequestBodyBytes` (default 4194304), `targetTimeoutMs` (target only) |
 | `handler` | `{behaviour}`: `echo` (200, the request's `content-type` and body, no Content-Length), `throw`, `hang` (no response headers ever; target mode). In target mode it describes the local server |
 | `in` | the bytes the edge writes on the stream before it CLOSEs its write side (no `Authorization`, the edge strips it) |
 | `inExpand` | optional `{marker: {repeat, count}}`: replace the marker in `in` with `repeat` × `count` before writing (`head_431.json`, whose head is over 64 KiB) |
-| `upstream` | the request the app receives: `{method, url, headers, body}` with lower-case header names, or `null` when the app MUST NOT be called |
-| `out` | the bytes the SDK writes back before it CLOSEs |
+| `inRest` | optional: bytes the edge writes only after the SDK's response head has arrived; the request is `in` + `inRest` (`body_413_streamed_reset.json`) |
+| `upstream` | the request the app receives: `{method, url, headers, body}` with lower-case header names, or `null` when the app MUST NOT be called; with `outReset` there is no `body` (the app reads a body stream that fails) |
+| `out` | the bytes the SDK writes back before it CLOSEs; with `outReset`, the response head the stream MUST start with (later body bytes not compared) |
+| `outReset` | optional `{code}`: the stream ends with RESET of this WIRE.md §2.8 code number instead of CLOSE; `{"code": 7}` (`CANCEL`) for a streamed body that goes over the cap after the response head but before the response is complete (MCPWARP.md §4.2; a complete response ends with CLOSE). Every `*_reset` fixture applies only to an SDK adapter that streams the request body; a buffering one, or a runner that only drives a buffering path, skips them with a note |
 
 An SDK-generated error reply (MCPWARP.md §4.5: 404, 413, 431, 500 `handler error`, 503, 504) is compared
-byte-exact. A response that comes from the app is compared by status line, header set (names
+byte-exact; to `HEAD` it is the same head with no body (`head_mcp_503.json`). A response that comes from the app is compared by status line, header set (names
 case-insensitive, order free) and de-chunked body; chunk boundaries are not normative. File names end in the
-expected status (`_404`), except `mcp_post_ok` and `notification_passthrough` (200).
+expected status (`_404`), except `mcp_post_ok` and `notification_passthrough` (200) and the `outReset`
+fixtures, which end in `_reset`. A stream answered `404`/`503` with request body bytes still unread ends with
+CLOSE after the SDK drains the body, never RESET, also when the body turns out malformed (MCPWARP.md §4.4).
 
 ### `tunnel/` and `status-text/`
 
-`tunnel/README.md` defines the event-sequence shape and runner contract. `status-text/rules.json` states the
+`tunnel/README.md` defines the event-sequence shape and runner contract, including "Running the fixtures"
+(observing `onRetry`, driving `disconnect.fatal`, the exact snapshot comparison). `status-text/rules.json` states the
 `describeStatus` rules, `cases.json` holds input → expected examples, and `<locale>.json` maps every legal
 `<state>.<code|none>` pairing to `{label, detail?}`.
 
@@ -370,7 +375,9 @@ earns its keep, as the arbiter that keeps independent SDKs honest with each othe
    valid Content-Length or chunked framing); the `out` status equals the file name's and the one the precedence
    431 > 404 > 503 > 413 > app gives; the reason phrase is the RFC 9110 one (413 `Content Too Large`); SDK error
    replies equal the §4.5 bytes exactly (`Content-Type: application/json`, `Content-Length`, `{"error": ...}` with
-   the §4 message); `upstream` is `null` for 404/413/431/503
+   the §4 message; head only for a `HEAD` request); `inRest` is appended to `in`; an `outReset` fixture is named
+   `*_reset`, has `outReset {code}` = `CANCEL` (7), a chunked body over the cap, an `inRest`, an `out` that is
+   the app's response head alone and an `upstream` without `body`; `upstream` is `null` for 404/413/431/503
    and otherwise equals the forwarded request (handler: `https://<Host><target>`, end-to-end headers without
    `expect`/`content-length`; target: target URL plus the query, `host` removed, `accept-encoding: identity`,
    `x-forwarded-host`, `x-forwarded-proto: https`); an `echo` response body equals the request body.

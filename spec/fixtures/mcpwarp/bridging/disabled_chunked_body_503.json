@@ -1,0 +1,11 @@
+{
+  "description": "While disabled, a POST /mcp with a chunked body is answered 503 {\"error\":\"service disabled\"} without reading the body for the app: availability is checked before the body (MCPWARP.md §4.4, D-2026-10-14-03). After the 503 the agent drains the unread body and CLOSEs; it never RESETs (§4.4 Ending a refused stream, D-2026-10-14-06).",
+  "sdkState": "disabled",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nTransfer-Encoding: chunked\r\n\r\n14\r\n{\"jsonrpc\":\"2.0\",\"id\r\n14\r\n\":1,\"method\":\"ping\"}\r\n0\r\n\r\n",
+  "upstream": null,
+  "out": "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 28\r\n\r\n{\"error\":\"service disabled\"}",
+  "notes": "Reach sdkState disabled with a matching disable op on the live connection (MCPWARP.md §10.3). The SDK MAY write the 503 before the edge has finished writing the body; the stream still ends with CLOSE once the body is drained."
+}
