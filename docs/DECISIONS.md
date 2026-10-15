@@ -258,7 +258,8 @@ upgrade headers at all; `D-2026-10-13-02` was found while bringing ws-mixer-serv
 Project owner's approvals. `D-2026-10-14-01` is driven by the Go, Rust and Python SDKs that need a mcpwarp layer
 to implement against; `D-2026-10-14-02` through `-05` resolve inconsistencies found while specifying that layer
 from ws-mixer-js HEAD (`d45d3b4`, `SDK_VERSION` `0.10.1`) and its docs; `D-2026-10-14-06` collects the points
-where the ws-mixer-js session implementing spec `v0.6.0` found `MCPWARP.md` silent; approved by Anatoly.
+where the ws-mixer-js session implementing spec `v0.6.0` found `MCPWARP.md` silent; `D-2026-10-14-07` does the
+same for the ws-mixer-rust session implementing `v0.6.1`; approved by Anatoly.
 
 - **D-2026-10-14-01** — The mcpwarp application layer is specified in this repo, as
   [`MCPWARP.md`](./MCPWARP.md) with `spec/mcpwarp.schema.json` and `spec/fixtures/mcpwarp/`, in two tiers.
@@ -345,6 +346,8 @@ where the ws-mixer-js session implementing spec `v0.6.0` found `MCPWARP.md` sile
     `drain{replaced}` (T45) alike: no `unregister`, in-flight streams cut, sticky until the next `configure()`
     (§3.3 Sticky, §5.9 Drain, §6.8 Take-over close). ws-mixer-js already does this for `conflict`
     (`conflicted()` → `detach()` → `handle.close()`).
+    Refined by `D-2026-10-14-07` R4 / §11 row 18: that close still sends `drain{client_requested}` and waits a
+    grace while streams are open, which the take-over path must skip.
   - P9 `tunnel/README.md` gains "Running the fixtures": observing `onRetry`, driving `disconnect.fatal`, the
     exact snapshot comparison rule.
 
@@ -371,3 +374,47 @@ where the ws-mixer-js session implementing spec `v0.6.0` found `MCPWARP.md` sile
   Changed: `MCPWARP.md` §2.3, §2.7, §2.8, §3.3, §4.2, §4.4, §5.4, §5.6, §5.9, §6.7, §6.8, §6.9, §10.3, §10.4,
   §11 rows 16–17; `spec/README.md`; `tunnel/README.md`; `check-fixtures.mjs` (`inRest`, `outReset`, head-only
   `HEAD` replies); `COUNTS.json`. See [`MCPWARP.md`](./MCPWARP.md).
+- **D-2026-10-14-07** — v0.6.2 clarifications from the Rust implementation; each ruling below is now normative
+  text. Ships as spec `v0.6.2`. Reason: the ws-mixer-rust session implementing spec `v0.6.1` (crate
+  `ws-mixer-mcpwarp`) found these points silent, JS-only or self-contradictory, so each SDK would otherwise have
+  picked its own answer. Profile tier:
+  - R3 a `target` with `http:` MUST be supported, `https:` is OPTIONAL; an SDK without https support MUST
+    reject the option synchronously as a configuration error (§6.1): thrown by `expose()` / `createTunnel()`
+    option validation, never a tunnel status (not T8), never at request time (§5.2 row 3, §6.1).
+  - R5 an observable HTTP `401` on the upgrade (`httpStatus` 401, no `errorName`) is `error`/`UNAUTHORIZED`
+    like close `4011`, and `403`/`404` `error`/`DISCONNECTED_FATAL`; an unobservable one is a failed dial
+    (`connecting`/`RETRYING`) (§1 Upgrade-status mapping, §6.7 T27–T29, T32, T33; `dial_failed.httpStatus`;
+    fixtures `tunnel/36_t32_http_401_upgrade_unauthorized`,
+    `tunnel/37_t27_http_401_upgrade_unobservable_retrying`).
+  - R6 the drain replacement dial's `onRetry` `delayMs` is the actual delay before the dial, backoff jitter or
+    the drain's `retry_after_ms` hint alike (§5.9).
+  - R11 `onRetry` does not fire for a replacement dial that `drain{replaced}` abandons (no retry is
+    scheduled) (§5.9; R7).
+
+  Wire tier:
+  - R1 socket injection is runtime-specific: a runtime with a WebSocket API MUST accept an injected constructor
+    or factory; a native SDK MUST expose an equivalent connector hook, at minimum the TLS configuration (§8).
+  - R2 `hello.meta.client` is `"sdk-<lang>"` (`sdk-js`, `sdk-go`, `sdk-rust`, `sdk-python`); `version` is the
+    mcpwarp layer's own package version; `hello.agent` stays the transport's (§3.1).
+  - R4 a take-over close (`conflict` or `drain{replaced}`) is `error{NO_ERROR}` on stream 0 + WS close `1000` at
+    once, skipping WIRE.md §2.10's drain and grace; never `APPLICATION_CLOSE` (§3.3 Sticky, §6.8 Take-over
+    close; §11 row 18).
+  - R7 on `drain{replaced}` the layer MUST abandon any replacement dial that has not yet completed its upgrade; a
+    replacement that has already sent `hello` (sent in the same poll as the `101`, so it cannot be held back)
+    MUST be closed with `error{NO_ERROR}` + WS `1000` before any `welcome` handling, MUST NOT be reported as
+    connected and MUST NOT register; the edge MUST tolerate a `hello` followed by an immediate close. `onRetry`
+    does not fire for the abandoned dial in either case (§3.3 Drain `replaced`, §6.8).
+  - R8 envelope defect check order is normative — in a `registered.services[]` entry `name`, `id`, `url`,
+    `created`, the checker's order — so a multi-defect message reports the same error everywhere (§2.8 rule 10;
+    fixtures `envelope/invalid/registered_multiple_defects`, `registered_defects_id_before_url_created`,
+    `registered_defects_url_before_created`; §11 row 19).
+  - R9 key order: senders SHOULD use the canonical order, receivers MUST NOT depend on it, an encoder MUST
+    produce §2.2's JSON value; byte identity is checked only against fixtures (§2.1, §2.2, §10.2, §12).
+
+  Repositories: R10 `REPOS.md` lists `ws-mixer-rust` (with the sibling crate `ws-mixer-mcpwarp`): six
+  repositories.
+
+  Changed: `MCPWARP.md` §1, §2.1, §2.2, §2.8, §3.1, §3.3, §5.2, §5.9, §6.1, §6.7, §6.8, §8, §10.2, §10.4, §11 rows
+  18–19, §12; `REPOS.md`; `tunnel/README.md` (`dial_failed.httpStatus`, drain `delayMs`); `check-fixtures.mjs`
+  (`httpStatus` range; a `MALFORMED_ENVELOPE` fixture's `message_contains` must name the first defect);
+  `COUNTS.json`. See [`MCPWARP.md`](./MCPWARP.md).

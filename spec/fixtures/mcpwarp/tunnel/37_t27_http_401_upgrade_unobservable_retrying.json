@@ -1,0 +1,21 @@
+{
+  "description": "Refused upgrade whose HTTP status the SDK cannot observe (MCPWARP.md §1 Upgrade-status mapping, §6.7 T27; D-2026-10-14-07 R5): the edge refuses with 401, but the factory reports only a failed dial (dial_failed without httpStatus), indistinguishable from a network failure. connecting + RETRYING, never error/UNAUTHORIZED; a second refusal keeps RETRYING (no snapshot); the redial then goes online. Companion of 36_t32_http_401_upgrade_unauthorized.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "dial_failed": {} },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "dial_failed": {} },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "connecting", "code": "RETRYING", "lastError": "Can't reach mcpwarp; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 3
+}

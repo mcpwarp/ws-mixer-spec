@@ -631,8 +631,8 @@ connections per user for paid tiers instead. ws-mixer supplies the mechanism; it
 12. Control dispatcher, a `match` on `t`: `ping`→`pong` at the **head** of the control queue · `pong`→ unknown id is a conn error, else record `last_pong_at`/RTT · `drain`→ stop expecting OPEN, start reconnecting now, arm the deadline timer · `error`→ log loudly, close, **never reply** · `app`→ hand `body` to the application (an `app` already dequeued before a following `error` is still owed to it, CLIENT-SDK.md's Handler delivery row) · `hello`/`welcome` after the handshake → conn error · unknown `t` → conn error naming the string.
 13. Four timers, that is all: ping (first sleep `random(0, interval)`), watchdog (`now - last_pong_at > ping_timeout` → `error{KEEPALIVE_TIMEOUT}` + close 4013), handshake timer (cancelled by `welcome`), stability timer — **one per connection** (armed at that connection's own `welcome`, cancelled if that same connection ends before it fires; a drain hand-over's old connection closing does NOT cancel the new connection's timer; on firing, resets the backoff counter and re-arms the once-only budgets above).
 14. On SIGINT/SIGTERM: `drain{reason:"client_requested"}`, wait up to 5 s, `error{NO_ERROR}`, close 1000.
-    Expose that same close path with an arbitrary code too, so an application can close with
-    `APPLICATION_CLOSE` (14 / 4014) instead of `NO_ERROR`.
+    Also expose an application close taking a message only, no code: it always sends `error{APPLICATION_CLOSE}`
+    and closes `4014` (CLIENT-SDK.md's Application close row), and stops any reconnect loop.
 15. Validation order, each step with its own message: parse → is object → has string `t` → `t` is known → per-type field checks. In tests, run `spec/fixtures/*.json` against `jsonschema.Draft202012Validator` **and** your hand-written validator and assert they agree.
 
 Budget: **~400–550 lines** total. If an implementation is materially longer, something in this spec is

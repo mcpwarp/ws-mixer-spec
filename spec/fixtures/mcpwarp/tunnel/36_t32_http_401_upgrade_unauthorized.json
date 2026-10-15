@@ -1,0 +1,32 @@
+{
+  "description": "Refused upgrade with an observable HTTP status (MCPWARP.md §1 Upgrade-status mapping, §6.7 T32, T33; D-2026-10-14-07 R5), static token: 401 (httpStatus in the disconnect reason, no errorName) is error/UNAUTHORIZED like close 4011; 403 and 404 are error/DISCONNECTED_FATAL; none redials, and the same config then starts again. A 503 is not fatal: a failed dial, connecting + RETRYING (T27), and the redial goes online.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "dial_failed": { "httpStatus": 401 } },
+    { "tick": { "ms": 120000 } },
+    { "configure": {} },
+    { "dial_failed": { "httpStatus": 403 } },
+    { "configure": {} },
+    { "dial_failed": { "httpStatus": 404 } },
+    { "configure": {} },
+    { "dial_failed": { "httpStatus": 503 } },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "error", "code": "UNAUTHORIZED", "lastError": "The token was rejected." },
+    { "state": "connecting" },
+    { "state": "error", "code": "DISCONNECTED_FATAL", "lastError": "The connection to mcpwarp failed." },
+    { "state": "connecting" },
+    { "state": "error", "code": "DISCONNECTED_FATAL", "lastError": "The connection to mcpwarp failed." },
+    { "state": "connecting" },
+    { "state": "connecting", "code": "RETRYING", "lastError": "Can't reach mcpwarp; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 5
+}

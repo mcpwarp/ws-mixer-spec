@@ -17,13 +17,14 @@ go run ./conformance/runner \
   --sdk go,js --mode all \
   --counts /path/to/COUNTS.json
 
-# From an SDK repo's own CI, against a fetched copy of this repo (see REPOS.md's spec.pin):
-go run "$SPEC/conformance/runner" \
-  --spec-root "$SPEC" \
-  --adapter go=./build/go-adapter/run \
+# From an SDK repo's own CI, against a copy of this repo fetched into .spec/ (see REPOS.md's spec.pin):
+repo="$PWD"
+(cd .spec && go run ./conformance/runner \
+  --spec-root "$repo/.spec" \
+  --adapter go="$repo/build/go-adapter" \
   --sdk go --mode fixture \
-  --counts ./conformance/COUNTS.json \
-  --report ./build/conformance.xml
+  --counts "$repo/conformance/COUNTS.json" \
+  --report "$repo/build/conformance.xml")
 
 # Narrow to one fixture/scenario while iterating:
 go run ./conformance/runner --spec-root . --adapters-dir /path/to/adapters \
@@ -476,23 +477,22 @@ concrete pointers from having actually built the other two adapters:
 - Keep `ping_interval_ms`/`ping_timeout_ms` at realistic values unless a fixture specifically
   needs them scaled (see "Keepalive is only scaled where it's the point" above) — don't naively
   wire `time_scale` into every duration your SDK owns.
-- Smoke it exactly as section 6 step 7 says: `./conformance/runner --sdk python --mode pair
-  --fixture happy_roundtrip -v` (once `happy_roundtrip` — or an equivalent — exists as a pair
-  scenario, which it does here) before trying the full fixture matrix.
+- Smoke it exactly as section 6 step 7 says (`--sdk go,python --mode pair --fixture
+  happy_roundtrip -v`, run from inside the fetched `.spec/`) before trying the full fixture matrix.
 - Stamp `t_ms` (integer, milliseconds since your adapter process started, monotonic) on every
   `data`, `stream_closed`, and `stream_reset` event, matching the Go and JS adapters
   (`docs/CONFORMANCE.md` section 1.2). It's additive — the runner ignores unknown fields — but
   keep it for consistency across SDKs.
-- `conformance/COUNTS.json` (docs/CONFORMANCE.md section 5's CI pass-count floor) exists and is
-  enforced on every run without a `--fixture` glob, for the keys that run exercised; bump its
-  `js-client`/`go-client`/etc. floors once Python starts passing cells, per its own `checkCounts`
-  doc comment in `main.go`.
+- The CI pass-count floor (docs/CONFORMANCE.md section 5) is `ws-mixer-python`'s own
+  `conformance/COUNTS.json`, passed via `--counts`; this repo ships none. It is enforced on every
+  run without a `--fixture` glob, for the keys that run exercised; give it `python-client` and
+  `go->python` floors once Python starts passing cells, per `checkCounts`'s doc comment in `main.go`.
 
 ## Gaps
 
 Being direct about what's incomplete, beyond what's already called out inline above:
 
-- **No `.github/workflows/conformance.yml` yet.** `conformance/COUNTS.json` (the pass-count floor,
-  docs/CONFORMANCE.md section 5) exists and is enforced by `main.go`'s `checkCounts` on every
-  run without a `--fixture` glob, for the keys that run exercised; wiring an actual CI workflow around `make conformance` is still open.
+- **This repo's CI runs no adapters.** `.github/workflows/spec.yml` covers `runner-build`,
+  `schema-drift`, `check-fixtures` and `runner-selftest`; the fixture/pair matrix, and each
+  `COUNTS.json` floor, run in the SDK repos' own `conformance.yml` (docs/CONFORMANCE.md section 5).
 - **Python adapter**: not started (out of scope here; see the checklist above).

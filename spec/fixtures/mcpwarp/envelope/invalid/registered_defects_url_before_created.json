@@ -1,0 +1,12 @@
+{
+  "description": "registered service with a valid name and id and two defects: url \"\", created a string. The reported error is the url one: url is checked before created in the normative order name, id, url, created. MCPWARP.md §2.8 rule 10 (D-2026-10-14-07 R8)",
+  "op": "registered",
+  "message": {
+    "v": 1,
+    "op": "registered",
+    "services": [{ "name": "anki", "id": "srv_anki", "url": "", "created": "yes" }]
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "MALFORMED_ENVELOPE", "message_contains": "registered.services[].url must be a non-empty string" }
+}

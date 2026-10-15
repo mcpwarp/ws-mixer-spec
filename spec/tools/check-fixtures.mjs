@@ -728,7 +728,8 @@ for (const bucket of ["valid", "invalid"]) {
       }
       const contains = isPlainObject(fixture.expect) ? fixture.expect.message_contains : undefined;
       if (contains !== undefined) {
-        const findings = [...strict.errors, wire.reason].join("\n");
+        // A decode failure names its first defect in MCPWARP.md §2.8 rule 10's order, so only that one counts.
+        const findings = (wire.code === "MALFORMED_ENVELOPE" ? [wire.reason] : [...strict.errors, wire.reason]).join("\n");
         check(
           typeof contains === "string" && contains.length > 0 && findings.includes(contains),
           `${rel}: expect.message_contains ${JSON.stringify(contains)} does not occur in the checker's findings (${findings.replace(/\n/g, "; ")})`
@@ -1180,6 +1181,11 @@ function checkTunnelEvent(ev, where, vocab, dials, inBurst) {
   for (const k of spec.required) check(k in payload, `${where}.${name}: missing payload key "${k}"`);
   if ("conn" in payload) {
     check(Number.isInteger(payload.conn) && payload.conn >= 1 && (dials === undefined || payload.conn <= dials), `${where}.${name}: conn must be a dial ordinal 1..expectDials`);
+  }
+  // MCPWARP.md §1 Upgrade-status mapping: the final HTTP status of a refused upgrade (no 1xx: 101 is success).
+  if (name === "dial_failed" && "httpStatus" in payload) {
+    const s = payload.httpStatus;
+    check(Number.isInteger(s) && s >= 200 && s <= 599, `${where}.${name}: httpStatus must be an HTTP status 200..599, got ${JSON.stringify(s)}`);
   }
 }
 

@@ -35,7 +35,7 @@ Each SDK runs them in its own CI against a fake edge and a fake clock. Shape:
 | `dispose` | `{timeoutMs?}` | call `dispose({timeoutMs})` (`timeoutMs` absent → `dispose()`) |
 | `subscribe` | `{}` | subscribe a second listener; the one snapshot it receives immediately is appended to `expect` at this point; then unsubscribe it |
 | `connected` | `{conn?}` | the pending dial succeeds: upgrade done, `hello` sent |
-| `dial_failed` | `{conn?}` | the pending dial fails before an upgrade (network error, or a refused upgrade seen as close `1006`); the SDK schedules a redial. A failure after the upgrade but before `welcome` is written as a `disconnect` on a connection with no `welcome`, and is a failed dial too (MCPWARP.md §6.7 Pre-`welcome` failure) |
+| `dial_failed` | `{httpStatus?, conn?}` | the pending dial fails before an upgrade (network error, or a refused upgrade seen as close `1006`); a redial is scheduled unless `httpStatus` is an observable `401`/`403`/`404` (fatal). `httpStatus`: the upgrade was refused with this HTTP status and the SDK can observe it (MCPWARP.md §1 Upgrade-status mapping): `401` (static token) → `error`/`UNAUTHORIZED` (T32), `403`/`404` → `error`/`DISCONNECTED_FATAL` (T33), anything else a failed dial with a redial; absent = no observable status, a plain failed dial (T27–T29). A failure after the upgrade but before `welcome` is written as a `disconnect` on a connection with no `welcome`, and is a failed dial too (MCPWARP.md §6.7 Pre-`welcome` failure) |
 | `welcome` | `{conn?}` | the edge sends `welcome`; the SDK sends `register` |
 | `registered` | `{services: [{url, id, created}], conn?}` | the edge answers the outstanding `register` with `registered` for the agent's name |
 | `register_error` | `{code, message?, id?, conn?}` | the edge answers the outstanding `register` with `registered.errors[]` = one entry for the agent's name |
@@ -68,7 +68,7 @@ that matches the event's `cause`:
 |---|---|
 | `register` | `delayMs` equals the event's `delayMs`; `reason` starts with `register failed: ` |
 | `overloaded` | `delayMs` `1000`; `reason` starts with `register failed: OVERLOADED: `; `attempt` `1` for the first re-send after the refusal, one more for each consecutive re-send, back to `1` after a successful `registered` |
-| `drain` | `attempt` `0`, `reason` `"drain"`; `delayMs` (the drain jitter actually waited, `0–2000`) ≤ the event's `delayMs` |
+| `drain` | `attempt` `0`, `reason` `"drain"`; `delayMs` (the delay actually waited: the drain jitter, `0–2000`, or the drain's `retry_after_ms` hint) ≤ the event's `delayMs` |
 | `dial`, `lost` | `delayMs` ≤ the event's `delayMs`; `reason` (the transport's text) is not compared |
 
 An `onRetry` call with no `retry` event after it is not a failure: a later `configure`, `stop`, take-over or
@@ -84,6 +84,13 @@ fake sits below the ws-mixer client (a fake WebSocket) closes the connection wit
 `error{code}` when `code` is given, and MUST observe that the SDK's disconnect reason has the same `fatal`. A
 runner that fakes the ws-mixer client itself injects the disconnect reason `{fatal, wsCode, errorName: code}`
 verbatim; it then tests the tunnel's reaction only, and the SDK's own reconnect tests must cover the verdict.
+
+`dial_failed` with `httpStatus` works the same way: a fake WebSocket factory refuses the upgrade and reports
+that status the way the runtime's factory contract allows (JS `WebSocketLike.upgradeFailure.status`), so the
+status is observable; a runner that fakes the client injects the disconnect reason
+`{phase: "dial", fatal, httpStatus}` with no `wsCode` and no `errorName` (CLIENT-SDK.md's Disconnect reason
+shape row), `fatal` per WIRE.md §2.9 with the static token: `401`, `403`, `404` fatal, anything else not.
+`dial_failed` without `httpStatus` is a refusal the SDK cannot see (or a network error): never fatal.
 
 ### Snapshot comparison
 
