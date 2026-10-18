@@ -530,3 +530,101 @@ the mcpwarp-saas session (`apps/tunnel` at `f81cd76`). Ships as spec `v0.6.3`.
   historical); `MCPWARP.md` §2.6, §2.7 (edge op shapes), §3.3, §11 row 37 (Go's take-over close); notes on `D-2026-10-14-04` and `-07`; tunnel
   fixture `43_too_many_services_error_op`. See [`MCPWARP.md`](./MCPWARP.md#33-conflict-and-take-over),
   [`WIRE.md`](./WIRE.md#29-sequences).
+
+## 2026-10-18
+
+Project owner's approvals. Anatoly chose option (a) on 2026-10-15 — a multi-service wire tier plus a
+multi-service controller profile, with the single-service text kept as a conforming subset — and approved the
+two edge request headers `X-Mcpwarp-Server-Id` and `X-Mcpwarp-Server-Name` the same day. The wire facts come
+from the mcpwarp-saas session's reading of the deployed edge (`apps/tunnel`, mcpwarp-saas `f81cd76`, on
+ws-mixer-go v0.8.0); the controller behaviour is modelled on the Go CLI (mcpwarp/cli v0.2.4, `ab462de`, on
+ws-mixer-go v0.7.0: `internal/tunnel/tunnel.go`, `internal/registry/registry.go`, `internal/cli/up.go`,
+`docs/DESIGN.md`), which records no D-entries of its own on these points. Where the two disagree, the edge wins
+on the wire and the CLI's tolerant merge by name is the model for the controller. Ships as spec `v0.7.0`.
+
+- **D-2026-10-18-01** — Multi-service wire tier. A `register`/`unregister` carries 1..100 distinct entries
+  (`maxItems: 100`, was `1`); a `register` frame with more → whole-frame `error{TOO_MANY_SERVICES}`, no
+  `registered`; `unregister` frames SHOULD also stay ≤ 100 (no error defined). Each `registered`
+  answers exactly one `register` and lists exactly that frame's entries, each in `services[]` or `errors[]`
+  (`errors[].id` only on `SERVER_DISABLED`); partial success is normal; a reply listing none of the frame's
+  names counts as all-transient and is re-sent with the shared backoff (no handle state change for
+  single-service agents); a later
+  `register` is additive. `unregistered` is `{v, op, services: [{name, id}]}`, no `errors`, names not held
+  silently absent, other names untouched. Every `welcome` re-registers the full configured list minus local
+  removals, local disables and taken-over names (dashboard-disabled and refused names included);
+  same-session re-register is idempotent; a reconnect's new session takes over the old connection's holds.
+  Take-over is per name: `conflict{id, name, reason:"taken_over"}` costs the loser that name only, its other
+  names stay live, and it never re-registers the name until an explicit `enable(name)` or `configure()`;
+  a `conflict` for a name never held is ignored. `disable` (by id) and `enable` (by name or id) fan out to
+  every connection of the owner; an unknown `disable` id is held per connection, cleared by a matching
+  `enable`, a take-over of the name or the connection's end, and never carried across a reconnect. Transient entries are retried
+  per name with the §3.2 backoff. Reason: the edge already implements batches (`maxServicesPerRegister = 100`,
+  `agentconn.go:1131`) and the CLI already sends them; the v0.6.x one-entry rule described neither. Changed:
+  `MCPWARP.md` §2.1 (One service per message scoped to single-service agents, new Batch row), §2.2 (batch
+  examples), §2.3 (Multi-service replies), §2.6 (`TOO_MANY_SERVICES` row: above 100, never for 1..100), §2.7
+  (multi-service acceptance; Held `disable` lifetime row), §3.1–§3.3 (new rows; the Drain `replaced` row marked
+  "not sent by the deployed edge"), §5.9 (Held `disable` row), §10.2, §10.6, §11 rows 51 and 52; envelope fixtures `register_batch_valid`, `register_batch_101_invalid`,
+  `registered_partial_errors`, `unregistered_subset`, `conflict_per_name`; `spec/mcpwarp.schema.json`
+  `services` `maxItems: 100`. See [`MCPWARP.md`](./MCPWARP.md#21-carrier).
+- **D-2026-10-18-02** — Stream routing on a multi-service connection. No target rides `OPEN`; the agent selects
+  the service from the request head: by `X-Mcpwarp-Server-Id` (header name case-insensitive) matched against
+  `registered.services[].id` when present, with no fallback when it matches nothing; else by the `Host`
+  header's first label split at its **last** `-` (usernames are `^[a-z0-9]{3,20}$` with no `-`; service names
+  §2.4, so the split is unambiguous) and matched against the configured names. `X-Mcpwarp-Server-Name` MAY
+  also be present and is never routed by. Both headers are optional and edge-added; an edge that sets them
+  first removes the client's copies. An agent honours them only with the SDK option `trustServerIdHeader`
+  (default `false`) on, which operators enable once their edge is known to add and strip them; otherwise
+  routing is by `Host`. Selection runs after the path check, so
+  `404` still beats `503`; no service selected, or a locally disabled, unregistered, refused or never-active
+  service → `503 service unavailable`; dashboard-disabled → `503 service disabled`; taken over → RESET
+  `CANCEL`. Reason: the edge picks the connection by the `Host` label (`internal/reqpath/pipe_server.go:29`) and
+  forwards the raw request with `Host` kept, so the label is the only hint today; a server-id header survives
+  renames and costs the edge little (mcpwarp-saas, 2026-10-15). A per-stream target on `OPEN` would be a new
+  ws-mixer stream-metadata feature and stays out of scope. Changed: `MCPWARP.md` §4.8 (new; the
+  `trustServerIdHeader` option, default off, gates step 1 and the headers' trust), §4.5 (an adapter whose
+  runtime HTTP parser rejects an unrepresentable request before the path is seen MAY answer the `400` before
+  §4.4's checks), §6A.1, §9.2; bridging fixtures `multi_service_route_by_header` (`runnerRequirement`
+  `trust-server-id-header`), `multi_service_route_by_host`, `multi_service_unknown_service_503`,
+  `multi_service_unknown_service_non_mcp_404`.
+  The "available from mcpwarp tunnel `<version>`" placeholder is filled in when mcpwarp-saas tags the release.
+  See [`MCPWARP.md`](./MCPWARP.md#48-multi-service-routing).
+- **D-2026-10-18-03** — Multi-service controller profile and status vocabulary. `createServiceGroup(options)`
+  with `configure({enabled, token, services: [{name, kind?, handler | target, targetTimeoutMs?}], url?,
+  webSocket?})`, `stop()`, `dispose()`, `addService()`, `removeService()`, local `enable(name)`/`disable(name)`,
+  and a `ServiceGroupStatus {state, code?, lastError?, services}` whose `services` map holds a
+  `ServiceStatus {state, id?, url?, code?, lastError?}` per name. Per-service states `pending`, `active`,
+  `disabled`, `rejected`, `taken_over`, `unregistered`, by the CLI's precedence (`internal/cli/up.go:387-402`:
+  local disable, awaiting reply, `SERVER_DISABLED`, other refusal, dashboard disable, active) with removal and
+  take-over added. The connection keeps §6's state machine and its 13 codes; no new `TunnelStatusCode`; the
+  group never enters `disabled` and reaches `conflict` only by a whole-connection `drain{replaced}`. Partial
+  failure never moves the group. The one new fatal case — nothing registered since the connection started,
+  nothing in flight, every service refused — is `error`/`INTERNAL` with the new `lastError` `No service could
+  be registered.`; any `SERVER_DISABLED` entry keeps the group alive, since its dashboard `enable` arrives on
+  that connection. A services-only `configure()` diffs by name and never redials. New status-text keys
+  `service.pending`, `service.active`, `service.disabled`, `service.rejected`, `service.taken_over`,
+  `service.unregistered` and `lastError.NO_SERVICE_REGISTERED`, six locales each, new in this spec;
+  `describeServiceStatus` renders a `ServiceStatus`, and `describeStatus` shows the localized
+  `NO_SERVICE_REGISTERED` detail for that one `lastError`. Reason: the CLI runs several servers on one
+  connection and every SDK that grows the same feature needs one observable contract; mapping the fatal case
+  onto `INTERNAL` keeps the 17-pair table and every existing locale key valid. The CLI's own rule (fatal unless
+  every error is `SERVER_DISABLED`) would close a connection that a disabled service still needs; the profile
+  departs from it there (`MCPWARP.md` §11 row 50). Changed: `MCPWARP.md` §1 (tier row), §5.9 (`onRetry`
+  special cases: with a provider, the first rejected token — `401` at the upgrade or `4011` before `welcome` —
+  is reported as a non-fatal `disconnect`, `phase` `dial`/`handshake`, then `onRetry` `{1, 0, "token-refresh"}`
+  and the redial), §6A (new), §7 (data files row), §6.6 (one row), §9.2 (new), §10.6, §11 rows 50 and 53, §12;
+  `CLIENT-SDK.md` Rejected token row; status-text locale files and `rules.json` `newInSpec`;
+  tunnel fixtures `ms_01_…` onward. See
+  [`MCPWARP.md`](./MCPWARP.md#6a-sdk-profile-multi-service-controller-tier-2).
+- **D-2026-10-18-04** — One frame in flight and the `OVERLOADED` re-send. An agent keeps at most one
+  `register`/`unregister` outstanding per connection; the next goes out after the reply, a whole-frame `error`
+  op for it, or the connection's end. `OVERLOADED` means the frame was dropped unprocessed (per-pod semaphore
+  of 256 in-flight app messages shared by every connection on the pod, `agentconn.go:538`, `:906-914`) and
+  gets no reply; every agent, single-service included, MUST re-send the dropped frame (`register` or
+  `unregister`) after `min(1000·2^(n−1), 30000)` ms, `n` = consecutive `OVERLOADED` (or all-transient) replies
+  since the last successful reply; any successful reply (a `registered` with at least one non-transient entry,
+  or an `unregistered`) resets it. There is no "re-send once". An agent MAY instead re-send every unanswered
+  frame; one in flight is recommended. Reason: neither `OVERLOADED` nor `TOO_MANY_SERVICES` names the frame it answers, so without one
+  in flight an agent cannot know what to re-send or which names were refused; the CLI never re-sends and so
+  silently loses a dropped `register` until the next reconnect. Changed: `MCPWARP.md` §2.6 (`OVERLOADED` row,
+  Frames in flight), §3.2 Transient retry, §5.9, §6.7 T15, §6A.7, §11 row 49, §12; tunnel fixtures for the `OVERLOADED` re-send and the whole-frame refusal. See
+  [`MCPWARP.md`](./MCPWARP.md#26-errorcode).

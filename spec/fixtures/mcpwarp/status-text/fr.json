@@ -15,5 +15,12 @@
   "error.CONFLICT": { "label": "Erreur", "detail": "Nom déjà utilisé" },
   "error.UNSUPPORTED_VERSION": { "label": "Erreur", "detail": "Mise à jour du plugin requise" },
   "error.DISCONNECTED_FATAL": { "label": "Erreur", "detail": "Échec de la connexion à mcpwarp" },
-  "error.INTERNAL": { "label": "Erreur", "detail": "Erreur inattendue" }
+  "error.INTERNAL": { "label": "Erreur", "detail": "Erreur inattendue" },
+  "service.pending": { "label": "Enregistrement…" },
+  "service.active": { "label": "Actif" },
+  "service.disabled": { "label": "Désactivé" },
+  "service.rejected": { "label": "Refusé" },
+  "service.taken_over": { "label": "Repris par une autre instance" },
+  "service.unregistered": { "label": "Retiré" },
+  "lastError.NO_SERVICE_REGISTERED": { "label": "Erreur", "detail": "Aucun service n'a pu être enregistré" }
 }

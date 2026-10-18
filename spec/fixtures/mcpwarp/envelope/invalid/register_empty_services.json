@@ -1,5 +1,5 @@
 {
-  "description": "register with an empty services array: malformed, rejected by the schema (minItems, enforced in code by check-fixtures.mjs), and an agent MUST NOT send it; an agent MUST send exactly one entry per register. §2 fixes no edge answer, so expect is a SCHEMA_* hint that edge runners skip. MCPWARP.md §2.1, §10.2",
+  "description": "register with an empty services array: malformed, rejected by the schema (minItems, enforced in code by check-fixtures.mjs), and an agent MUST NOT send it; an agent MUST send 1..100 entries per register. §2 fixes no edge answer, so expect is a SCHEMA_* hint that edge runners skip. MCPWARP.md §2.1, §10.2",
   "op": "register",
   "message": { "v": 1, "op": "register", "services": [] },
   "schema_valid": false,

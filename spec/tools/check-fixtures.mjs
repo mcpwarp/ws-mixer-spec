@@ -776,6 +776,8 @@ const BRIDGING_NAMED_STATUS = {
   target_fragment_dropped_absolute_form: 200,
   target_allowed_set: 200,
   head_mcp_400_headonly: 400,
+  multi_service_route_by_header: 200,
+  multi_service_route_by_host: 200,
 };
 const REASON_PHRASES = {
   200: "OK",
@@ -797,7 +799,7 @@ const SDK_ERROR_MESSAGES = {
   413: ["request body too large"],
   431: ["request head too large"],
   500: ["handler error"],
-  503: ["service disabled", "service closing"],
+  503: ["service disabled", "service closing", "service unavailable"],
   504: ["local server timed out"],
 };
 const NO_APP_STATUSES = new Set([400, 404, 413, 431, 503]);
@@ -969,13 +971,47 @@ function sameJson(a, b) {
   return JSON.stringify(sort(a)) === JSON.stringify(sort(b));
 }
 
-// The status the MCPWARP.md §4 rules give, in precedence order: 431 (head size, the blank line
+// MCPWARP.md §4.8 multi-service selection. Step 1, only with the SDK option trustServerIdHeader (default
+// off; a fixture that needs it carries runnerRequirement "trust-server-id-header"): an X-Mcpwarp-Server-Id
+// header (name matched case-insensitively, parseHttpMessage lower-cases names; the first if repeated)
+// selects the service with that registered id, or none, with no fallback. Step 2: else the Host's first
+// label, port dropped and lowercased, split at its LAST "-" into service name and username
+// (^[a-z0-9]{3,20}$). Returns the selected services[] entry or null.
+const BRIDGING_USERNAME_RE = /^[a-z0-9]{3,20}$/;
+// §6A.4 states a bridging fixture can hold; taken_over is §4.8 row 3c, a RESET.
+const BRIDGING_SERVICE_STATES = ["active", "pending", "disabled", "rejected", "unregistered"];
+// A runner without the capability skips the fixture with a note (spec/README.md bridging/).
+const BRIDGING_RUNNER_REQUIREMENTS = ["trust-server-id-header"];
+function bridgingRoute(fx, req) {
+  const ids = req.get("x-mcpwarp-server-id");
+  if (fx.runnerRequirement === "trust-server-id-header" && ids.length > 0) return fx.services.find((s) => s.id === ids[0]) ?? null;
+  const label = req.get("host")[0].toLowerCase().replace(/:\d+$/, "").split(".")[0];
+  const cut = label.lastIndexOf("-");
+  if (cut <= 0) return null;
+  const name = label.slice(0, cut);
+  if (!BRIDGING_USERNAME_RE.test(label.slice(cut + 1)) || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(name)) return null;
+  return fx.services.find((s) => s.name === name) ?? null;
+}
+
+// The status the MCPWARP.md §4.4 rules give, in precedence order: 431 (head size, the blank line
 // counted) > 400 (target form) > 404 (path) > 503 (disabled/closing) > 413 (body cap) > 400 (not
-// representable) > the app.
+// representable) > the app. With fx.services, §4.8 puts selection after the path check: no service
+// selected -> 503 service unavailable (3b); a dashboard-disabled one -> 503 service disabled (3d);
+// a locally disabled, rejected, unregistered or never-active pending one -> 503 service unavailable
+// (3e); an active one is served. `routed` is the selected service's name, or null.
 function bridgingExpectedStatus(fx, req) {
-  if (req.headBytes > BRIDGING_MAX_HEAD_BYTES) return { status: 431 };
-  if (!supportedTargetForm(req.target)) return { status: 400, message: "unsupported request target form" };
-  if (requestPath(req.target) !== "/mcp") return { status: 404 };
+  if (req.headBytes > BRIDGING_MAX_HEAD_BYTES) return { status: 431, routed: null };
+  if (!supportedTargetForm(req.target)) return { status: 400, message: "unsupported request target form", routed: null };
+  if (requestPath(req.target) !== "/mcp") return { status: 404, routed: null };
+  if (!fx.services) return bridgingServiceStatus(fx, req);
+  const svc = bridgingRoute(fx, req);
+  if (svc === null) return { status: 503, message: "service unavailable", routed: null };
+  if (svc.state === "disabled" && svc.code === "DISABLED") return { status: 503, message: "service disabled", routed: svc.name };
+  if (svc.state !== "active") return { status: 503, message: "service unavailable", routed: svc.name };
+  return { ...bridgingServiceStatus({ ...fx, sdkState: "online" }, req), routed: svc.name };
+}
+
+function bridgingServiceStatus(fx, req) {
   if (fx.sdkState !== "online") return { status: 503, message: fx.sdkState === "disabled" ? "service disabled" : "service closing" };
   const cap = fx.limits.maxRequestBodyBytes ?? BRIDGING_DEFAULT_BODY_CAP;
   if (req.body.length > cap) return { status: 413 };
@@ -998,13 +1034,52 @@ for (const file of listJsonFiles(bridgingDir)) {
   if (fx === undefined) continue;
   mcpwarpBridgingCount++;
 
-  const missing = ["description", "sdkState", "mode", "limits", "in", "out", "upstream"].filter((k) => !(k in fx));
+  // A multi-service fixture (MCPWARP.md §4.8) has `services` (the held services and their §6A.4 states)
+  // in place of `sdkState`, plus `username` and `routedTo`; every service shares mode/target/handler.
+  const multi = "services" in fx;
+  const requiredKeys = multi
+    ? ["description", "username", "services", "routedTo", "mode", "limits", "in", "out", "upstream"]
+    : ["description", "sdkState", "mode", "limits", "in", "out", "upstream"];
+  const missing = requiredKeys.filter((k) => !(k in fx));
   if (missing.length) {
     check(false, `${rel}: missing required keys ${missing.join(", ")}`);
     continue;
   }
   check(typeof fx.description === "string" && fx.description.length > 0, `${rel}: description must be a non-empty string`);
-  check(BRIDGING_STATES.includes(fx.sdkState), `${rel}: sdkState must be one of ${BRIDGING_STATES.join(", ")}`);
+  if (multi) {
+    check(!("sdkState" in fx), `${rel}: a multi-service fixture has services[].state, not sdkState`);
+    check(typeof fx.username === "string" && BRIDGING_USERNAME_RE.test(fx.username), `${rel}: username must match ${BRIDGING_USERNAME_RE}`);
+    check(fx.routedTo === null || typeof fx.routedTo === "string", `${rel}: routedTo must be a service name or null`);
+    if (!Array.isArray(fx.services) || fx.services.length < 2 || !fx.services.every(isPlainObject)) {
+      check(false, `${rel}: services must be an array of at least two objects`);
+      continue;
+    }
+    fx.services.forEach((s, i) => {
+      const where = `${rel}: services[${i}]`;
+      for (const k of Object.keys(s)) check(["name", "id", "url", "state", "code"].includes(k), `${where}: unknown key "${k}" (name, id, url, state, code?)`);
+      check(typeof s.name === "string" && s.name.length <= 30 && /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(s.name), `${where}: name must be a service name (SERVICE_NAME_RE, at most 30)`);
+      check(typeof s.id === "string" && s.id !== "", `${where}: id must be a non-empty string (registered.services[].id)`);
+      check(BRIDGING_SERVICE_STATES.includes(s.state), `${where}: state must be one of ${BRIDGING_SERVICE_STATES.join(", ")} (taken_over RESETs, which a bridging fixture cannot state)`);
+      check(!("code" in s) || (s.state === "disabled" && s.code === "DISABLED"), `${where}: code is only "DISABLED" on a dashboard-disabled service`);
+      let label;
+      try {
+        label = new URL(s.url).hostname.split(".")[0];
+      } catch {
+        label = undefined;
+      }
+      check(label === `${s.name}-${fx.username}`, `${where}: url (registered.services[].url) must have the host label "${s.name}-${fx.username}"`);
+    });
+    const names = fx.services.map((s) => s.name);
+    const ids = fx.services.map((s) => s.id);
+    check(new Set(names).size === names.length && new Set(ids).size === ids.length, `${rel}: services[] names and ids must be unique`);
+    check(fx.routedTo === null || names.includes(fx.routedTo), `${rel}: routedTo ${JSON.stringify(fx.routedTo)} is not a services[] name`);
+  }
+  if ("runnerRequirement" in fx) {
+    check(multi && BRIDGING_RUNNER_REQUIREMENTS.includes(fx.runnerRequirement), `${rel}: runnerRequirement must be one of ${BRIDGING_RUNNER_REQUIREMENTS.join(", ")} on a multi-service fixture, got ${JSON.stringify(fx.runnerRequirement)}`);
+  }
+  if (!multi) {
+    check(BRIDGING_STATES.includes(fx.sdkState), `${rel}: sdkState must be one of ${BRIDGING_STATES.join(", ")}`);
+  }
   check(BRIDGING_MODES.includes(fx.mode), `${rel}: mode must be one of ${BRIDGING_MODES.join(", ")}`);
   check(fx.mode !== "target" || typeof fx.target === "string", `${rel}: mode "target" needs a "target" URL`);
   check(fx.mode === "target" || !("target" in fx), `${rel}: "target" only goes with mode "target"`);
@@ -1088,6 +1163,9 @@ for (const file of listJsonFiles(bridgingDir)) {
   if (expected.error) {
     check(false, `${rel}: ${expected.error}`);
     continue;
+  }
+  if (multi) {
+    check(fx.routedTo === expected.routed, `${rel}: routedTo ${JSON.stringify(fx.routedTo)}, but the MCPWARP.md §4.8 selection gives ${JSON.stringify(expected.routed)} (X-Mcpwarp-Server-Id first under runnerRequirement "trust-server-id-header", else the Host label split at its last "-")`);
   }
   if (outReset) {
     // The only §4 RESET after response bytes: a streamed body over the cap (413 by
@@ -1317,6 +1395,288 @@ function collectConfigs(events, out) {
   return out;
 }
 
+// --- group (multi-service controller) fixtures: tunnel/README.md "Group fixtures" ---
+
+const GROUP_SERVICE_STATES = ["pending", "active", "disabled", "rejected", "taken_over", "unregistered"];
+const GROUP_ONLY_EVENTS = ["unregistered", "add_service", "remove_service", "enable_service", "disable_service", "sent"];
+const REGISTER_ERROR_CODES = mcpwarpSchemaDoc.$defs.registered.properties.errors.items.properties.code.enum;
+// MCPWARP.md §2.5 TRANSIENT_REGISTER_ERRORS: re-sent after the backoff, never a service state of their own.
+const TRANSIENT_REGISTER_CODES = ["INTERNAL", "NO_RESPONDERS", "TIMEOUT", "ABORTED", "CONNECTION_LOST", "MALFORMED_REPLY", "UNAVAILABLE", "SERVICE_ERROR"];
+// §6A.6 G7: whole-frame error ops that answer an outstanding register (any code but these three).
+const NOT_FRAME_ANSWERS = ["OVERLOADED", "CONNECTION_LIMIT", "UNSUPPORTED_VERSION"];
+const GROUP_FATAL_LAST_ERROR = "No service could be registered.";
+const SERVICE_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+const SERVICE_KINDS = ["http", "stdio"];
+const groupOverloadDelay = (streak) => Math.min(1000 * 2 ** (streak - 1), 30000);
+// §6A.4 ServiceStatus lastError of a rejected service, by its wire code.
+function rejectedLastError(code) {
+  if (code === "UNAUTHENTICATED") return TUNNEL_LAST_ERRORS.UNAUTHORIZED[0];
+  if (code === "FORBIDDEN") return TUNNEL_LAST_ERRORS.UNAUTHORIZED[1];
+  if (["INVALID_NAME", "USERNAME_REQUIRED", "QUOTA_EXCEEDED", "CONFLICT"].includes(code)) return TUNNEL_LAST_ERRORS[code][0];
+  return TUNNEL_LAST_ERRORS.INTERNAL[0];
+}
+
+function checkGroupServiceList(list, where) {
+  if (!Array.isArray(list) || list.length < 1 || list.length > 100) {
+    check(false, `${where}: services must be an array of 1..100 {name, kind?}`);
+    return [];
+  }
+  list.forEach((s, i) => {
+    const ok = isPlainObject(s) && Object.keys(s).every((k) => k === "name" || k === "kind");
+    check(ok && typeof s.name === "string" && s.name.length <= 30 && SERVICE_NAME_RE.test(s.name), `${where}[${i}]: needs a valid name (SERVICE_NAME_RE, at most 30) and only name, kind?`);
+    check(ok && (!("kind" in s) || SERVICE_KINDS.includes(s.kind)), `${where}[${i}]: kind must be one of ${SERVICE_KINDS.join(", ")}`);
+  });
+  const names = list.map((s) => (isPlainObject(s) ? s.name : undefined));
+  check(new Set(names).size === names.length, `${where}: a name appears twice`);
+  return names;
+}
+
+// Walks a group fixture's events: payload rules the vocabulary cannot state, the one-frame-in-flight rule,
+// registered/unregistered against the outstanding frame, the OVERLOADED backoff, and the facts a snapshot's
+// per-service state must be backed by. Returns those facts.
+function checkGroupEvents(fx, rel) {
+  const facts = {
+    known: new Set(),
+    active: new Set(),
+    rejected: new Set(), // "<name> <code>"
+    disabledDash: new Set(),
+    disabledIds: new Set(),
+    disabledLocal: new Set(),
+    ids: new Map(), // name -> every server id learned for it
+    urls: new Map(), // name -> every url registered for it
+    conflicts: new Set(),
+    removed: new Set(),
+    fatalReply: false, // a register answer that can end in G5: no success and no SERVER_DISABLED, or a whole-frame refusal
+  };
+  const learn = (map, name, value) => map.set(name, new Set([...(map.get(name) ?? []), value]));
+  let configured = new Set(checkGroupServiceList(fx.config.services, `${rel}: config.services`)); // names configured now
+  for (const n of configured) facts.known.add(n);
+  check(!("name" in fx.config), `${rel}: a group config has services, not name`);
+  let inFlight = null;
+  let dropped = null; // the frame an OVERLOADED dropped, until it is re-sent
+  let streak = 0; // §2.6 / §3.2 counter, per controller: kept across reconnects, reset by a reply with a non-transient entry
+  let current = null; // the merged config of the last configure, null before it and after stop / dispose
+  const endConnection = () => {
+    inFlight = null;
+    dropped = null;
+  };
+  // A configure restarts (redials) unless it changes only services: same trimmed token, enabled unchanged, every
+  // other key equal.
+  const restarts = (prev, next) => {
+    if (prev === null) return true;
+    const trim = (t) => (typeof t === "string" ? t.trim() : t);
+    return [...new Set([...Object.keys(prev), ...Object.keys(next)])].some((k) => {
+      if (k === "services") return false;
+      if (k === "token") return trim(prev.token) !== trim(next.token);
+      return JSON.stringify(prev[k]) !== JSON.stringify(next[k]);
+    });
+  };
+  fx.events.forEach((ev, i) => {
+    if (!isPlainObject(ev) || Object.keys(ev).length !== 1) return;
+    const [name, p] = Object.entries(ev)[0];
+    const where = `${rel}#events[${i}].${name}`;
+    if (name === "burst" || (name === "disconnect" && isPlainObject(p) && "flush_after" in p)) {
+      check(false, `${where}: burst and flush_after are not used in group fixtures`);
+      return;
+    }
+    if (!isPlainObject(p)) return;
+    switch (name) {
+      case "configure": {
+        if ("services" in p) {
+          configured = new Set(checkGroupServiceList(p.services, `${where}.services`));
+          for (const n of configured) facts.known.add(n);
+        }
+        check(!("name" in p), `${where}: a group configure has services, not name`);
+        const next = { ...(current ?? fx.config), ...p };
+        if (restarts(current, next)) {
+          endConnection();
+          streak = 0;
+        }
+        current = next;
+        break;
+      }
+      case "stop":
+      case "dispose":
+        endConnection();
+        streak = 0;
+        current = null;
+        break;
+      case "connected":
+      case "welcome":
+      case "dial_failed":
+      case "disconnect":
+        endConnection();
+        break;
+      case "add_service":
+        // A name removed earlier (taken_over ones included) may be added again; only a currently configured one may not.
+        check(typeof p.name === "string" && p.name.length <= 30 && SERVICE_NAME_RE.test(p.name) && !configured.has(p.name), `${where}: name must be a valid service name not currently configured`);
+        check(!("kind" in p) || SERVICE_KINDS.includes(p.kind), `${where}: kind must be one of ${SERVICE_KINDS.join(", ")}`);
+        configured.add(p.name);
+        facts.known.add(p.name);
+        break;
+      case "remove_service":
+      case "enable_service":
+      case "disable_service":
+        check(facts.known.has(p.name), `${where}: ${JSON.stringify(p.name)} is not a configured service`);
+        if (name === "remove_service") {
+          facts.removed.add(p.name);
+          configured.delete(p.name);
+        }
+        if (name === "disable_service") facts.disabledLocal.add(p.name);
+        break;
+      case "sent": {
+        check(p.op === "register" || p.op === "unregister", `${where}: op must be register or unregister`);
+        const names = Array.isArray(p.names) ? p.names : [];
+        check(names.length >= 1 && names.length <= 100 && new Set(names).size === names.length, `${where}: names must be 1..100 distinct names`);
+        for (const n of names) check(facts.known.has(n), `${where}: ${JSON.stringify(n)} is not a configured service`);
+        check(inFlight === null, `${where}: a ${p.op} is sent while ${inFlight ? `the ${inFlight.op} of [${inFlight.names.join(", ")}]` : ""} is still outstanding (one frame in flight per connection)`);
+        if (dropped) {
+          check(dropped.retried, `${where}: the frame OVERLOADED dropped is re-sent before its retry {cause: "overloaded"}`);
+          check(dropped.op === p.op && JSON.stringify(dropped.names) === JSON.stringify(names), `${where}: after OVERLOADED the next frame is the dropped ${dropped.op} [${dropped.names.join(", ")}] again`);
+          dropped = null;
+        }
+        inFlight = { op: p.op, names };
+        break;
+      }
+      case "registered": {
+        const services = Array.isArray(p.services) ? p.services : [];
+        const errors = Array.isArray(p.errors) ? p.errors : [];
+        check(inFlight !== null && inFlight.op === "register", `${where}: no register is outstanding`);
+        const answered = [];
+        services.forEach((s, j) => {
+          const ok = isPlainObject(s) && typeof s.name === "string" && typeof s.id === "string" && s.id !== "" && typeof s.url === "string" && s.url !== "";
+          check(ok, `${where}.services[${j}]: needs name, id, url`);
+          if (!ok) return;
+          answered.push(s.name);
+          facts.active.add(s.name);
+          learn(facts.ids, s.name, s.id);
+          learn(facts.urls, s.name, s.url);
+        });
+        let nonTransient = services.length > 0;
+        errors.forEach((e, j) => {
+          const ok = isPlainObject(e) && typeof e.name === "string" && REGISTER_ERROR_CODES.includes(e.code);
+          check(ok, `${where}.errors[${j}]: needs name and a RegisterErrorCode`);
+          if (!ok) return;
+          check(("id" in e) === (e.code === "SERVER_DISABLED"), `${where}.errors[${j}]: id is carried by SERVER_DISABLED and only by it`);
+          answered.push(e.name);
+          if (!TRANSIENT_REGISTER_CODES.includes(e.code)) nonTransient = true;
+          if (e.code === "SERVER_DISABLED") {
+            facts.disabledDash.add(e.name);
+            learn(facts.ids, e.name, e.id);
+          } else if (!TRANSIENT_REGISTER_CODES.includes(e.code)) facts.rejected.add(`${e.name} ${e.code}`);
+        });
+        if (inFlight && inFlight.op === "register") {
+          check(JSON.stringify([...answered].sort()) === JSON.stringify([...inFlight.names].sort()), `${where}: lists [${answered.join(", ")}], but a registered answers exactly the names of its register [${inFlight.names.join(", ")}], each once`);
+        }
+        if (services.length === 0 && !errors.some((e) => isPlainObject(e) && e.code === "SERVER_DISABLED")) facts.fatalReply = true;
+        inFlight = null;
+        // §2.6: the streak counts OVERLOADED and all-transient replies; any other entry ends it.
+        streak = nonTransient ? 0 : streak + 1;
+        break;
+      }
+      case "unregistered": {
+        const services = Array.isArray(p.services) ? p.services : [];
+        check(inFlight !== null && inFlight.op === "unregister", `${where}: no unregister is outstanding`);
+        services.forEach((s, j) => {
+          check(isPlainObject(s) && typeof s.name === "string" && typeof s.id === "string", `${where}.services[${j}]: needs name, id`);
+          if (inFlight && isPlainObject(s)) check(inFlight.names.includes(s.name), `${where}.services[${j}]: ${JSON.stringify(s.name)} was not in the unregister`);
+        });
+        inFlight = null;
+        streak = 0;
+        break;
+      }
+      case "app_error":
+        if (p.code === "OVERLOADED") {
+          check(inFlight !== null, `${where}: OVERLOADED with no register/unregister outstanding`);
+          if (inFlight) dropped = { ...inFlight, retried: false };
+          inFlight = null;
+          streak++;
+        } else if (!NOT_FRAME_ANSWERS.includes(p.code)) {
+          if (p.code === "TOO_MANY_SERVICES") check(inFlight !== null && inFlight.op === "register", `${where}: TOO_MANY_SERVICES answers an outstanding register`);
+          // §6A.6 G7: the whole-frame refusal answers the outstanding frame; a register's names are rejected.
+          if (inFlight && inFlight.op === "register") {
+            for (const n of inFlight.names) facts.rejected.add(`${n} ${p.code}`);
+            facts.fatalReply = true;
+          }
+          inFlight = null;
+        }
+        break;
+      case "retry":
+        if (p.cause === "overloaded") {
+          check(dropped !== null && !dropped.retried, `${where}: an overloaded retry needs a frame OVERLOADED dropped`);
+          check(p.delayMs === groupOverloadDelay(streak), `${where}: the ${streak}. consecutive OVERLOADED / all-transient reply backs off ${groupOverloadDelay(streak)} ms, got ${p.delayMs}`);
+          if (dropped) dropped.retried = true;
+        }
+        break;
+      case "conflict":
+        check(typeof p.name === "string" && p.name !== "", `${where}: a group conflict carries the name`);
+        // §3.3: a conflict for a name never held (unconfigured, or configured but never registered) is ignored,
+        // so it backs no taken_over.
+        if (facts.known.has(p.name) && (facts.active.has(p.name) || facts.disabledDash.has(p.name))) facts.conflicts.add(p.name);
+        break;
+      case "disabled":
+        check(typeof p.id === "string" && p.id !== "", `${where}: a group disable carries the service id`);
+        facts.disabledIds.add(p.id);
+        break;
+      case "enabled":
+        check((typeof p.id === "string" && p.id !== "") || (typeof p.name === "string" && p.name !== ""), `${where}: a group enable carries an id, a name, or both`);
+        if (typeof p.id === "string" && facts.known.has(p.name)) learn(facts.ids, p.name, p.id);
+        break;
+    }
+  });
+  return facts;
+}
+
+function checkGroupSnapshot(snap, where, facts) {
+  if (!isPlainObject(snap.services)) {
+    check(false, `${where}: a group snapshot has a services map`);
+    return;
+  }
+  // §6A.4: the group's (state, code) pairs are §6.5's minus disabled/DISABLED.
+  check(snap.state !== "disabled", `${where}: a group is never disabled as a whole (a dashboard disable is per service)`);
+  // §6A.6 G5. Snapshots are not tied to event positions, so "the preceding registered" is approximated: the
+  // fixture holds a register answer with no success and no SERVER_DISABLED (or a whole-frame refusal), and the
+  // snapshot itself has every service rejected or locally disabled, at least one rejected.
+  if (snap.state === "error" && snap.lastError === GROUP_FATAL_LAST_ERROR) {
+    check(facts.fatalReply, `${where}: "${GROUP_FATAL_LAST_ERROR}" needs a registered with no services[] entry and no SERVER_DISABLED (or a whole-frame refusal) before it (G5)`);
+    const svcs = Object.values(snap.services).filter(isPlainObject);
+    check(svcs.some((s) => s.state === "rejected") && svcs.every((s) => s.state === "rejected" || (s.state === "disabled" && !("code" in s))), `${where}: G5 holds only while every service is rejected or locally disabled, at least one rejected`);
+  }
+  const SERVICE_KEYS = ["state", "id", "url", "code", "lastError"];
+  for (const [name, s] of Object.entries(snap.services)) {
+    const at = `${where}.services["${name}"]`;
+    check(facts.known.has(name), `${at}: not a configured service`);
+    if (!isPlainObject(s) || !Object.keys(s).every((k) => SERVICE_KEYS.includes(k)) || !GROUP_SERVICE_STATES.includes(s.state)) {
+      check(false, `${at}: must be {state, id?, url?, code?, lastError?} with state one of ${GROUP_SERVICE_STATES.join(", ")}`);
+      continue;
+    }
+    if ("id" in s) check(facts.ids.get(name)?.has(s.id) === true, `${at}: id ${JSON.stringify(s.id)} was never learned for this name (registered, SERVER_DISABLED, enable)`);
+    check(("url" in s) === (s.state === "active"), `${at}: url is present exactly while active`);
+    if ("url" in s) check(facts.urls.get(name)?.has(s.url) === true, `${at}: url ${JSON.stringify(s.url)} was never registered for this name`);
+    check(("code" in s) === ("lastError" in s), `${at}: code and lastError are set together`);
+    const dashboard = s.state === "disabled" && "code" in s;
+    let want = null; // [code, lastError] the §6A.4 table requires
+    if (dashboard) want = ["DISABLED", TUNNEL_LAST_ERRORS.DISABLED[0]];
+    if (s.state === "taken_over") want = ["TAKEN_OVER", TUNNEL_LAST_ERRORS.TAKEN_OVER[0]];
+    if (s.state === "rejected") want = [s.code, typeof s.code === "string" ? rejectedLastError(s.code) : undefined];
+    if (want === null) {
+      check(!("code" in s), `${at}: ${s.state} carries no code`);
+    } else {
+      check(s.code === want[0] && s.lastError === want[1], `${at}: ${s.state} needs code ${JSON.stringify(want[0])} with lastError ${JSON.stringify(want[1])}, got ${JSON.stringify(s.code)} / ${JSON.stringify(s.lastError)}`);
+    }
+    const ids = [...(facts.ids.get(name) ?? [])];
+    const backed = {
+      pending: true,
+      active: facts.active.has(name),
+      rejected: facts.rejected.has(`${name} ${s.code}`),
+      disabled: dashboard ? facts.disabledDash.has(name) || ids.some((id) => facts.disabledIds.has(id)) : facts.disabledLocal.has(name),
+      taken_over: facts.conflicts.has(name),
+      unregistered: facts.removed.has(name),
+    }[s.state];
+    check(backed, `${at}: state ${s.state}${s.code ? ` ${s.code}` : ""} has no event behind it in this fixture`);
+  }
+}
+
 const tunnelDir = path.join(mcpwarpDir, "tunnel");
 let mcpwarpTunnelCount = 0;
 
@@ -1349,6 +1709,19 @@ if (!fs.existsSync(tunnelDir)) {
 
     fx.events.forEach((ev, i) => checkTunnelEvent(ev, `${rel}#events[${i}]`, tunnelVocab, fx.expectDials, null));
     checkDrainRetryAfter(fx.events, rel);
+    const group = "services" in fx.config;
+    check(group === path.basename(file).startsWith("ms_"), `${rel}: a group fixture (config.services) is named ms_NN_*.json, and only it`);
+    const groupFacts = group ? checkGroupEvents(fx, rel) : null;
+    if (!group) {
+      fx.events.forEach((ev, i) => {
+        const name = isPlainObject(ev) ? Object.keys(ev)[0] : undefined;
+        check(!GROUP_ONLY_EVENTS.includes(name), `${rel}#events[${i}]: "${name}" is only for group fixtures`);
+        if (name === "registered" && isPlainObject(ev.registered)) {
+          const p = ev.registered;
+          check(!("errors" in p) && (!Array.isArray(p.services) || p.services.every((s) => !isPlainObject(s) || !("name" in s))), `${rel}#events[${i}].registered: a single-service registered has no errors and no names (register_error instead)`);
+        }
+      });
+    }
     const subscribes = fx.events.filter((ev) => isPlainObject(ev) && "subscribe" in ev).length;
     let repeats = 0;
     fx.expect.forEach((snap, i) => {
@@ -1368,7 +1741,8 @@ if (!fs.existsSync(tunnelDir)) {
         check(false, `${where}: a snapshot must be an object`);
         return;
       }
-      for (const k of Object.keys(snap)) check(TUNNEL_SNAPSHOT_KEYS.has(k), `${where}: unknown TunnelStatus key "${k}"`);
+      for (const k of Object.keys(snap)) check(TUNNEL_SNAPSHOT_KEYS.has(k) || (group && k === "services"), `${where}: unknown TunnelStatus key "${k}"`);
+      if (group) checkGroupSnapshot(snap, where, groupFacts);
       if (!TUNNEL_STATES.includes(snap.state)) {
         check(false, `${where}: state must be one of ${TUNNEL_STATES.join(", ")}, got ${JSON.stringify(snap.state)}`);
         return;
@@ -1382,13 +1756,16 @@ if (!fs.existsSync(tunnelDir)) {
         const le = snap.lastError;
         check(typeof le === "string" && le.length > 0, `${where}: lastError must be a non-empty string`);
         if (typeof le === "string") {
-          const canonical = TUNNEL_LAST_ERRORS[code] ?? [];
+          // A group's fatal first reply is error/INTERNAL with its own constant (tunnel/README.md Group fixtures).
+          const canonical = [...(TUNNEL_LAST_ERRORS[code] ?? []), ...(group && snap.state === "error" && code === "INTERNAL" ? [GROUP_FATAL_LAST_ERROR] : [])];
           check(canonical.includes(le), `${where}: lastError for ${code} must be a MCPWARP.md §6.6 constant (${canonical.map((s) => JSON.stringify(s)).join(" | ")}), got ${JSON.stringify(le)}`);
           // a short redacted token ("t") is checked by equality only
           for (const t of tokens) check(t.length < 4 ? le !== t : !le.includes(t), `${where}: lastError contains the token`);
         }
       }
-      if (snap.state === "online") {
+      if (group) {
+        check(!("url" in snap), `${where}: a group snapshot has no connection-level url`);
+      } else if (snap.state === "online") {
         check(typeof snap.url === "string" && snap.url.length > 0, `${where}: online carries a non-empty url`);
       } else {
         check(!("url" in snap), `${where}: url is only set while online`);
@@ -1413,7 +1790,11 @@ function checkStatusString(s, where) {
 if (!fs.existsSync(statusTextDir)) {
   mcpwarpNotes.push("fixtures/mcpwarp/status-text/ missing, skipped");
 } else {
-  const legalKeys = Object.entries(TUNNEL_PAIRS).flatMap(([state, codes]) => codes.map((c) => `${state}.${c ?? "none"}`));
+  // MCPWARP.md §6A.9: the seven multi-service keys sit beside the <state>.<code> pairings.
+  const SERVICE_TEXT_KEYS = GROUP_SERVICE_STATES.map((s) => `service.${s}`);
+  const NO_SERVICE_KEY = "lastError.NO_SERVICE_REGISTERED";
+  const MULTI_TEXT_KEYS = [...SERVICE_TEXT_KEYS, NO_SERVICE_KEY];
+  const legalKeys = [...Object.entries(TUNNEL_PAIRS).flatMap(([state, codes]) => codes.map((c) => `${state}.${c ?? "none"}`)), ...MULTI_TEXT_KEYS];
   const isSpecialKey = (k) => k.startsWith("_") || k.startsWith("$");
   for (const required of ["rules.json", "cases.json", "en.json"]) {
     check(fs.existsSync(path.join(statusTextDir, required)), `fixtures/mcpwarp/status-text/${required} is missing`);
@@ -1431,7 +1812,7 @@ if (!fs.existsSync(statusTextDir)) {
   if (tables.en) {
     const enKeys = Object.keys(tables.en.data).sort();
     for (const k of enKeys) {
-      check(isSpecialKey(k) || legalKeys.includes(k), `${tables.en.rel}: key "${k}" is not a legal <state>.<code|none> pairing`);
+      check(isSpecialKey(k) || legalKeys.includes(k), `${tables.en.rel}: key "${k}" is not a legal <state>.<code|none> pairing or a multi-service key`);
     }
     for (const k of legalKeys) check(enKeys.includes(k), `${tables.en.rel}: legal pairing "${k}" has no entry`);
     for (const { data, rel } of Object.values(tables)) {
@@ -1444,6 +1825,8 @@ if (!fs.existsSync(statusTextDir)) {
           continue;
         }
         checkStatusString(v.label, `${rel}: "${k}".label`);
+        if (SERVICE_TEXT_KEYS.includes(k)) check(!("detail" in v), `${rel}: "${k}" is {label} only`);
+        if (k === NO_SERVICE_KEY) check("detail" in v, `${rel}: "${k}" needs a detail`);
         if ("detail" in v) {
           checkStatusString(v.detail, `${rel}: "${k}".detail`);
           check(v.detail !== v.label, `${rel}: "${k}".detail equals its label and must be left out`);
@@ -1460,7 +1843,7 @@ if (!fs.existsSync(statusTextDir)) {
     const states = {};
     const codes = {};
     for (const [k, v] of Object.entries(data)) {
-      if (isSpecialKey(k) || !isPlainObject(v)) continue;
+      if (isSpecialKey(k) || !isPlainObject(v) || MULTI_TEXT_KEYS.includes(k)) continue;
       const [state, code] = k.split(".");
       if (state in states) check(states[state] === v.label, `${rel}: every ${state}.* key needs the same label; "${k}" has ${JSON.stringify(v.label)}, another has ${JSON.stringify(states[state])}`);
       else states[state] = v.label;
@@ -1469,7 +1852,7 @@ if (!fs.existsSync(statusTextDir)) {
       if (code in codes) check(codes[code] === sentence, `${rel}: every *.${code} key needs the same sentence; "${k}" has ${JSON.stringify(sentence)}, another has ${JSON.stringify(codes[code])}`);
       else codes[code] = sentence;
     }
-    derived[locale] = { states, codes };
+    derived[locale] = { states, codes, data };
   }
 
   const rulesPath = path.join(statusTextDir, "rules.json");
@@ -1502,7 +1885,23 @@ if (!fs.existsSync(statusTextDir)) {
       if (le === rules.invalidConfigComposition.genericLastError) detail = sentence;
       else if (le.startsWith(sentence)) detail = le;
       else detail = sentence + rules.colonJoiner[l] + le.replace(new RegExp(rw.pattern, rw.flags), rw.replacement);
+    } else if (status.state === "error" && status.code === "INTERNAL" && le === GROUP_FATAL_LAST_ERROR && isPlainObject(derived[l].data[NO_SERVICE_KEY])) {
+      detail = derived[l].data[NO_SERVICE_KEY].detail; // §6A.9
     } else detail = sentence;
+    return typeof detail === "string" && detail !== "" && detail !== label ? { label, detail } : { label };
+  }
+  // §6A.9 describeServiceStatus: the service.<state> label; a detail only for rejected (by code) and a
+  // dashboard-disabled service; lastError never shown.
+  function describeServiceStatus(service, locale) {
+    const { data } = derived[resolveLocale(locale)];
+    const text = (k, field) => (isPlainObject(data[k]) ? data[k][field] : undefined);
+    const label = typeof service.state === "string" && isPlainObject(data[`service.${service.state}`]) ? data[`service.${service.state}`].label : String(service.state);
+    let detail;
+    if (service.state === "rejected") {
+      if (["INVALID_NAME", "USERNAME_REQUIRED", "QUOTA_EXCEEDED", "CONFLICT"].includes(service.code)) detail = text(`error.${service.code}`, "detail");
+      else if (service.code === "UNAUTHENTICATED" || service.code === "FORBIDDEN") detail = text("error.UNAUTHORIZED", "detail");
+      else detail = text("error.INTERNAL", "detail");
+    } else if (service.state === "disabled" && service.code === "DISABLED") detail = text("disabled.DISABLED", "label");
     return typeof detail === "string" && detail !== "" && detail !== label ? { label, detail } : { label };
   }
   const canDescribe =
@@ -1518,6 +1917,15 @@ if (!fs.existsSync(statusTextDir)) {
     for (const [locale, { data, rel }] of Object.entries(tables)) {
       for (const [k, v] of Object.entries(data)) {
         if (isSpecialKey(k)) continue;
+        if (SERVICE_TEXT_KEYS.includes(k)) {
+          const got = describeServiceStatus({ state: k.slice("service.".length) }, locale);
+          check(got.label === v.label, `${rel}: "${k}".label is ${JSON.stringify(v.label)} but describeServiceStatus({state}) labels it ${JSON.stringify(got.label)}`);
+          continue;
+        }
+        if (k === NO_SERVICE_KEY) {
+          check(v.label === derived[locale].states.error, `${rel}: "${k}".label must be the locale's error label ${JSON.stringify(derived[locale].states.error)}`);
+          continue;
+        }
         const [state, code] = k.split(".");
         const got = describeStatus(code === "none" ? { state } : { state, code }, locale);
         check(sameJson(got, v), `${rel}: "${k}" is ${JSON.stringify(v)} but describeStatus({state, code}) gives ${JSON.stringify(got)}`);
@@ -1532,17 +1940,19 @@ if (!fs.existsSync(statusTextDir)) {
     if (cases !== undefined) {
       check(isPlainObject(cases) && Array.isArray(cases.cases) && cases.cases.length > 0, `${relCases}: needs a non-empty "cases" array`);
       (Array.isArray(cases.cases) ? cases.cases : []).forEach((c, i) => {
+        // input.status -> describeStatus; input.service (a ServiceStatus) -> describeServiceStatus (§6A.9).
         const ok =
           isPlainObject(c) &&
           typeof c.description === "string" &&
           isPlainObject(c.input) &&
-          isPlainObject(c.input.status) &&
+          isPlainObject(c.input.status) !== isPlainObject(c.input.service) &&
           isPlainObject(c.expect) &&
           typeof c.expect.label === "string" &&
           (c.expect.detail === undefined || typeof c.expect.detail === "string");
-        check(ok, `${relCases}#cases[${i}]: needs description, input.status (object) and expect {label, detail?}`);
+        check(ok, `${relCases}#cases[${i}]: needs description, one of input.status / input.service (object) and expect {label, detail?}`);
         if (ok && canDescribe) {
-          const got = describeStatus(c.input.status, c.input.locale ?? undefined);
+          const locale = c.input.locale ?? undefined;
+          const got = c.input.service ? describeServiceStatus(c.input.service, locale) : describeStatus(c.input.status, locale);
           check(sameJson(got, c.expect), `${relCases}#cases[${i}]: expect ${JSON.stringify(c.expect)} but rules.json + the locale tables give ${JSON.stringify(got)}`);
         }
       });

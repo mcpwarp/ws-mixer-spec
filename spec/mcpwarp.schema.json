@@ -17,7 +17,7 @@
     "register": {
       "$anchor": "register",
       "title": "register",
-      "description": "Agent -> edge, sent after every welcome (and after enable). The SDK sends exactly one service per message. MCPWARP.md §2, §3.",
+      "description": "Agent -> edge, sent after every welcome (and after enable). 1..100 services per message (a single-service SDK sends one); no name twice in one frame; more than 100 is refused whole with error{TOO_MANY_SERVICES}. MCPWARP.md §2, §3.",
       "type": "object",
       "additionalProperties": false,
       "required": ["v", "op", "services"],
@@ -27,7 +27,7 @@
         "services": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 1,
+          "maxItems": 100,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -49,7 +49,7 @@
     "unregister": {
       "$anchor": "unregister",
       "title": "unregister",
-      "description": "Agent -> edge, sent by close() only when a register went out on the live connection. MCPWARP.md §2, §3.",
+      "description": "Agent -> edge, sent by close() only when a register went out on the live connection, and by a multi-service controller for a subset it removes. 1..100 services per message; no name twice in one frame. MCPWARP.md §2, §3.",
       "type": "object",
       "additionalProperties": false,
       "required": ["v", "op", "services"],
@@ -59,7 +59,7 @@
         "services": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 1,
+          "maxItems": 100,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -74,7 +74,7 @@
     "registered": {
       "$anchor": "registered",
       "title": "registered",
-      "description": "Edge -> agent, reply to register. Decode rules (MCPWARP.md §2): absent or null `services`/`errors` -> []; `url` is required and non-empty (an absent or empty url is MALFORMED_ENVELOPE); `created` absent or null -> false; null in an optional string -> MALFORMED_ENVELOPE.",
+      "description": "Edge -> agent, reply to exactly one register, listing exactly that frame's entries, each in services[] or errors[] (partial success is normal). Decode rules (MCPWARP.md §2): absent or null `services`/`errors` -> []; `url` is required and non-empty (an absent or empty url is MALFORMED_ENVELOPE); `created` absent or null -> false; null in an optional string -> MALFORMED_ENVELOPE.",
       "type": "object",
       "additionalProperties": false,
       "required": ["v", "op"],
@@ -122,7 +122,7 @@
     "unregistered": {
       "$anchor": "unregistered",
       "title": "unregistered",
-      "description": "Edge -> agent, reply to unregister. Absent or null `services` -> []; `services[].id` defaults to \"\". MCPWARP.md §2.",
+      "description": "Edge -> agent, reply to unregister: the frame's names this connection held (a name not held is absent), never errors. Absent or null `services` -> []; `services[].id` defaults to \"\". MCPWARP.md §2.",
       "type": "object",
       "additionalProperties": false,
       "required": ["v", "op"],
@@ -174,7 +174,7 @@
     "conflict": {
       "$anchor": "conflict",
       "title": "conflict",
-      "description": "Edge -> agent (the old holder), unsolicited: another connection registered the same (token subject, name). Matched by name or server id; sticky; the old holder never re-registers. MCPWARP.md §3.",
+      "description": "Edge -> agent (the old holder), unsolicited: another connection registered the same (token subject, name). Per name: the agent loses that name only, its other names stay live. Matched by name or server id; sticky; the old holder does not re-register that name until the next configure or enable. MCPWARP.md §2.7, §3.",
       "type": "object",
       "additionalProperties": false,
       "required": ["v", "op", "id", "name"],
@@ -189,7 +189,7 @@
     "error": {
       "$anchor": "error",
       "title": "error",
-      "description": "Edge -> agent, an app-level error about the last op. UNSUPPORTED_VERSION is fatal; OVERLOADED re-sends the outstanding op after 1000 ms; the rest are non-fatal. MCPWARP.md §2.",
+      "description": "Edge -> agent, an app-level error about the last op. UNSUPPORTED_VERSION is fatal; OVERLOADED means the frame was dropped unanswered and the outstanding op is re-sent after a backoff (1000 ms first); TOO_MANY_SERVICES refuses a whole register of more than 100 entries, with no registered reply; the rest are non-fatal. MCPWARP.md §2.6.",
       "type": "object",
       "additionalProperties": false,
       "required": ["v", "op", "code"],

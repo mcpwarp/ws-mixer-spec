@@ -257,7 +257,8 @@ a `oneOf` over 8 `$defs` entries, one per op, `op` a `const` in each: `register`
 `registered`, `unregistered`, `disable`, `enable`, `conflict`, `error` (edge → agent). There are no helper
 `$defs`, because the checker treats every `$defs` entry as a `oneOf` branch. Strict like `control.schema.json`:
 `additionalProperties: false` everywhere, a test-time typo-catcher only. `enum` (`kind`, the 17 register error
-codes, the 6 app error codes), `minItems` and `maxItems` (`register`/`unregister` carry exactly one service) are
+codes, the 6 app error codes), `minItems` and `maxItems` (`register`/`unregister` carry 1..100 services since
+v0.7.0; a single-service agent sends one) are
 written into the schema for real validators; `check-fixtures.mjs` applies them in code, because its validator
 subset ignores them.
 
@@ -276,9 +277,9 @@ wire_valid: true`, and its `expect.error_code` is a `SCHEMA_*` hint (`SCHEMA_TYP
 `SCHEMA_ADDITIONAL_PROPERTIES`). Otherwise, for an edge → agent op, `expect.error_code` is `MALFORMED_ENVELOPE`,
 `UNSUPPORTED_VERSION`, `UNKNOWN_OP` or a register/app error code and must equal what the decode rules give; for
 an agent → edge op it is the edge's answer where MCPWARP.md §2 fixes one (`INVALID_NAME`, `UNKNOWN_OP`,
-`UNSUPPORTED_VERSION`) or, for a message an agent MUST NOT send and whose answer is not specified, a `SCHEMA_*`
-hint that edge runners skip (`SCHEMA_MIN_ITEMS` for an empty `services`, `SCHEMA_MAX_ITEMS` for two services,
-since `TOO_MANY_SERVICES` is only a MAY), never `MALFORMED_ENVELOPE`/`NOT_OURS`. `expect.message_contains` must occur in
+`UNSUPPORTED_VERSION`, `TOO_MANY_SERVICES` for more than 100 services, `register_batch_101_invalid.json`) or, for
+a message an agent MUST NOT send and whose answer is not specified, a `SCHEMA_*` hint that edge runners skip
+(`SCHEMA_MIN_ITEMS` for an empty `services`), never `MALFORMED_ENVELOPE`/`NOT_OURS`. `expect.message_contains` must occur in
 the checker's own findings for the message. Every op has ≥1 `schema_valid` and ≥3 `schema_valid: false` fixtures.
 
 ### `bridging/`
@@ -309,6 +310,25 @@ expected status (`_404`), except `mcp_post_ok`, `notification_passthrough` and t
 without a status suffix (200), `head_mcp_400_headonly` (400), and the `outReset` fixtures, which end in `_reset`. A stream answered `404`/`503` with request body bytes still unread ends with
 CLOSE after the SDK drains the body, never RESET, also when the body turns out malformed (MCPWARP.md §4.4).
 
+**Multi-service (`multi_service_*.json`, MCPWARP.md §4.8).** For an SDK with the multi-service controller; others
+skip them. `services` replaces `sdkState`, and two keys are added; `mode`, `target`, `limits` and `handler` are
+shared by every service (the runner gives each service its own instance of that handler):
+
+| Key | Meaning |
+|---|---|
+| `services` | the services one connection holds, `[{name, id, url, state, code?}]`: `name`, `id`, `url` as the runner's `registered.services[]` delivers them, `state` a §6A.4 service state (`active`, `pending` = never active yet, `disabled` with `code: "DISABLED"` from the dashboard or without a code locally, `rejected`, `unregistered`) |
+| `username` | the account's username, the part after the last `-` of each service's host label (`^[a-z0-9]{3,20}$`) |
+| `routedTo` | the `name` of the service whose handler MUST be called, or `null` when none is (selection not reached, or no service selected) |
+| `runnerRequirement` | optional, multi-service only: `"trust-server-id-header"` — the runner MUST enable the SDK option `trustServerIdHeader` (default off) for this fixture; a runner or SDK that cannot skips it with a note |
+
+Selection runs after the path check. Only with `trustServerIdHeader` on (a fixture carrying
+`runnerRequirement: "trust-server-id-header"`), `X-Mcpwarp-Server-Id` (name case-insensitive, the first if
+repeated) selects the service with that `id` or none, with no fallback; otherwise, or without the header, the
+`Host` label (port dropped, lowercased, first label) split at its last `-` gives the service name. No service selected → `503` `service unavailable`; a selected
+dashboard-disabled one → `503` `service disabled`; a selected `pending`, locally `disabled`, `rejected` or
+`unregistered` one → `503` `service unavailable`; an `active` one goes on through §4.4 rows 4–6. The app sees the
+request unchanged, `X-Mcpwarp-*` headers included.
+
 ### `tunnel/` and `status-text/`
 
 `tunnel/README.md` defines the event-sequence shape and runner contract, including "Running the fixtures"
@@ -321,6 +341,16 @@ notification; a fixture using it carries `runnerRequirement: "post-disconnect-de
 cannot force that order skips it with a note), and the `retry` cause `token-refresh`. `status-text/rules.json` states the
 `describeStatus` rules, `cases.json` holds input → expected examples, and `<locale>.json` maps every legal
 `<state>.<code|none>` pairing to `{label, detail?}`.
+
+Since v0.7.0 `tunnel/ms_NN_*.json` are **group fixtures** for the multi-service controller (MCPWARP.md §6A;
+`tunnel/README.md` "Group fixtures"): `config.services` instead of `config.name`; snapshots are
+`ServiceGroupStatus`, the connection-level status plus `services: {<name>: {state, id?, url?, code?, lastError?}}`;
+new events `unregistered {services, conn?}`, `add_service {name, kind?}`, `remove_service {name}`,
+`enable_service {name}`, `disable_service {name}`, and the observation `sent {op, names, conn?}`, which lists every
+`register`/`unregister` the SDK sends (closes aside) at the point it is sent; `registered` carries named
+`services[]` and `errors[]`, `conflict` a `name`, `enabled` an `id` and/or `name`, `disabled` an `id`. The
+status-text tables gain `service.<state>` (`{label}`, six states) and `lastError.NO_SERVICE_REGISTERED`, and a
+`cases.json` case with `input.service` instead of `input.status` is a `describeServiceStatus` case (§6A.9).
 
 ## Consuming these fixtures from an SDK test harness
 
@@ -397,7 +427,12 @@ earns its keep, as the arbiter that keeps independent SDKs honest with each othe
    verbatim, `host` removed, `accept-encoding: identity`, `x-forwarded-host`, `x-forwarded-proto: https`), where
    `<target>` is the received target with the fragment cut, absolute-form cut to path + query, and every byte
    outside the §4.3 allowed set `%XX`-escaped once in uppercase hex, compared byte for byte; an `echo` response
-   body equals the request body.
+   body equals the request body. A `multi_service_*` fixture has `services` (≥2, unique names and ids, each
+   `url`'s host label `<name>-<username>`, a §6A.4 state, `code` only `DISABLED` on `disabled`), `username`,
+   `routedTo` and no `sdkState`, and optionally `runnerRequirement` `trust-server-id-header`, the only fixtures
+   whose `X-Mcpwarp-Server-Id` selects (the others route by `Host`); §4.8 selection runs after the 404 path check (`503` `service unavailable` for no
+   selection, `service disabled` / `service unavailable` for a selected service that cannot serve) and
+   `routedTo` equals the selected service's name (`null` when selection is not reached or selects none).
 9. `fixtures/mcpwarp/tunnel/` (skipped with a note when absent): `description`, `config`, `events`, non-empty
    `expect`; every event (and `burst` / `disconnect.flush_after` item) has exactly one key, an event name from
    `tunnel/README.md`'s Events table, and only that event's payload keys (required ones present); a `burst`
@@ -410,15 +445,41 @@ earns its keep, as the arbiter that keeps independent SDKs honest with each othe
    the MCPWARP.md §6.6 constants for that code (`connecting`/`INTERNAL` and `error`/`INTERNAL` share one), and
    never contains a config's token (a token under 4 characters is compared by equality); `url` is
    set, non-empty, exactly when `state` is `online`; two adjacent identical snapshots occur at most once per
-   `subscribe` event.
+   `subscribe` event. A fixture is a group fixture exactly when `config.services` is set and its name starts
+   `ms_`; the group-only events appear in no other fixture, and a single-service `registered` has no `errors`
+   and no names. In a group fixture: `config.services`/`configure.services` are 1..100 distinct valid names
+   (`kind` `http`/`stdio` when given); no `burst` or `flush_after`; `sent` names 1..100 distinct configured
+   names and is never sent while another `register`/`unregister` is outstanding on the connection (answered by
+   `registered`, `unregistered`, a whole-frame `app_error`, or dropped by `OVERLOADED`; a connection event or a
+   restarting `configure` clears it, a `configure` that changes only `services` — same trimmed token, `enabled`
+   unchanged — does not redial and clears neither it nor the streak); after `OVERLOADED` the next `sent` repeats
+   the dropped frame and follows a `retry {cause: "overloaded"}` whose `delayMs` is `min(1000 × 2^(n-1), 30000)`
+   for the n-th consecutive `OVERLOADED` or all-transient `registered` (the streak reset by a `registered` with at
+   least one non-transient entry or by an `unregistered`); `add_service` names a valid name not currently
+   configured (a removed or `taken_over`-then-removed name may come back); a `registered` lists exactly the outstanding `register`'s names,
+   each once, named entries with `id` on an error only for `SERVER_DISABLED`; an `unregistered` lists only
+   names of the outstanding `unregister`; `TOO_MANY_SERVICES` needs an outstanding `register`; `conflict` has a
+   `name`, `disabled` an `id`, `enabled` an `id` or a `name`. Every group snapshot has `services` and no `url`,
+   is never `disabled` as a group, and may carry `error`/`INTERNAL` with `No service could be registered.` (G5:
+   only in a fixture with a `registered` that has no `services[]` entry and no `SERVER_DISABLED`, or a
+   whole-frame refusal, and only while every service is `rejected` or locally `disabled`, one at least `rejected`);
+   each service is `{state, id?, url?, code?, lastError?}` with a §6A.4 state, `url` exactly while `active` and
+   one registered for that name, an `id` learned for that name, `code` with `lastError` exactly for a dashboard
+   `disabled` (`DISABLED`), `taken_over` (`TAKEN_OVER`) and `rejected` (its code, §6A.4's text), and a state some
+   event in the fixture accounts for (`active`: a `registered` entry; `rejected` with that code: an error entry
+   or a whole-frame `app_error`; dashboard `disabled`: `SERVER_DISABLED` or a `disabled` for one of its ids;
+   local `disabled`: `disable_service`; `taken_over`: a `conflict`; `unregistered`: `remove_service`).
 10. `fixtures/mcpwarp/status-text/` (skipped with a note when absent): `rules.json`, `cases.json` and `en.json`
-    exist; `en.json`'s keys are exactly the legal `<state>.<code|none>` pairings (keys starting `_` or `$` are
-    free); every other locale file has exactly `en.json`'s key set; values are `{label, detail?}` with
-    non-empty strings, no ASCII `...`, no trailing `.`/`。`, no surrounding whitespace, and `detail` ≠ `label`;
+    exist; `en.json`'s keys are exactly the legal `<state>.<code|none>` pairings plus the seven multi-service
+    keys `service.<state>` and `lastError.NO_SERVICE_REGISTERED` (keys starting `_` or `$` are free); every
+    other locale file has exactly `en.json`'s key set; values are `{label, detail?}` with non-empty strings, no
+    ASCII `...`, no trailing `.`/`。`, no surrounding whitespace, and `detail` ≠ `label`; a `service.*` value is
+    `{label}` only, and `lastError.NO_SERVICE_REGISTERED` has a `detail` and the locale's `error` label;
     in each locale every key of one state has the same label and every key of one code (`connecting.INTERNAL`,
     `error.INTERNAL`) the same sentence (`detail ?? label`); `rules.json`'s `locales` names exactly the table
-    files; every case in `cases.json` has `description`, `input.status` and `expect {label, detail?}`, and
-    `expect` equals what the `rules.json` composition gives from the locale tables.
+    files; every case in `cases.json` has `description`, exactly one of `input.status` / `input.service` and
+    `expect {label, detail?}`, and `expect` equals what the `rules.json` composition gives from the locale
+    tables (`describeStatus`, with §6A.9's `No service could be registered.` rule, or `describeServiceStatus`).
 
 Run it with `node spec/tools/check-fixtures.mjs` from anywhere in the repo. Regenerate the relaxed schema
 separately with `node spec/tools/gen-relaxed-schema.mjs` (or `--check` to only verify, no write).

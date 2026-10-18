@@ -1,0 +1,26 @@
+{
+  "description": "Multi-service selection by Host (MCPWARP.md §4.8 step 2): no X-Mcpwarp-Server-Id, so the agent takes the first Host label, b-svc-alice, and splits it at its LAST hyphen: service name b-svc (a service name may hold inner hyphens), username alice (^[a-z0-9]{3,20}$, never a hyphen). b-svc is held and active, so its handler serves the request; a-svc's is not called.",
+  "username": "alice",
+  "services": [
+    { "name": "a-svc", "id": "4f1d2c3b-0a1e-4c5d-9e8f-00000000000a", "url": "https://a-svc-alice.tunnel.example/mcp", "state": "active" },
+    { "name": "b-svc", "id": "4f1d2c3b-0a1e-4c5d-9e8f-00000000000b", "url": "https://b-svc-alice.tunnel.example/mcp", "state": "active" }
+  ],
+  "routedTo": "b-svc",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: b-svc-alice.tunnel.example\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "https://b-svc-alice.tunnel.example/mcp",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "b-svc-alice.tunnel.example",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+  },
+  "out": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n28\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\r\n0\r\n\r\n",
+  "notes": "The label is lowercased and a :port on Host is dropped before the split. The runner checks that only routedTo's handler instance was called."
+}

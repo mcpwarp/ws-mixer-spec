@@ -1,0 +1,54 @@
+{
+  "description": "Subset register and unregister without a redial (MCPWARP.md §6A.2, §6A.3; §2.3: a later register is additive, an unregister removes only its names). addService(beta) sends a register for beta only. addService(gamma) while that register is outstanding queues its frame, which goes out after beta's registered (one frame in flight, §2.6). removeService(alpha) shows alpha unregistered and sends an unregister for alpha only; its unregistered reply removes alpha from services, and beta and gamma stay active.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha"] } },
+    { "registered": { "services": [{ "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true }] } },
+    { "add_service": { "name": "beta", "kind": "http" } },
+    { "sent": { "op": "register", "names": ["beta"] } },
+    { "add_service": { "name": "gamma", "kind": "stdio" } },
+    { "registered": { "services": [{ "name": "beta", "url": "https://beta-tester.mcpwarp.test/mcp", "id": "srv_beta", "created": true }] } },
+    { "sent": { "op": "register", "names": ["gamma"] } },
+    { "registered": { "services": [{ "name": "gamma", "url": "https://gamma-tester.mcpwarp.test/mcp", "id": "srv_gamma", "created": true }] } },
+    { "remove_service": { "name": "alpha" } },
+    { "sent": { "op": "unregister", "names": ["alpha"] } },
+    { "unregistered": { "services": [{ "name": "alpha", "id": "srv_alpha" }] } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" } } },
+    { "state": "online", "services": { "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "pending" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "pending" },
+      "gamma": { "state": "pending" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "pending" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "unregistered", "id": "srv_alpha" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" }
+    } }
+  ],
+  "expectDials": 1
+}

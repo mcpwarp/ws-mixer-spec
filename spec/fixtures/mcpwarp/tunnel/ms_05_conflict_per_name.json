@@ -1,0 +1,53 @@
+{
+  "description": "conflict is per name (MCPWARP.md §2.7 multi-service table, §3.3 Per name): another session took over beta, so beta is taken_over (TAKEN_OVER, keeping its last id, no url) while alpha and gamma stay active and the group stays online. zeta is configured but its register was refused (QUOTA_EXCEEDED), so this connection never held it: a conflict for zeta is ignored and zeta stays rejected, never taken_over. beta is not registered again on its own (no sent during a long tick) until the local enable(beta), which clears taken_over and sends a register for beta only.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "http" }, { "name": "gamma", "kind": "http" }, { "name": "zeta", "kind": "http" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta", "gamma", "zeta"] } },
+    { "registered": {
+      "services": [
+        { "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true },
+        { "name": "beta", "url": "https://beta-tester.mcpwarp.test/mcp", "id": "srv_beta", "created": true },
+        { "name": "gamma", "url": "https://gamma-tester.mcpwarp.test/mcp", "id": "srv_gamma", "created": true }
+      ],
+      "errors": [{ "name": "zeta", "code": "QUOTA_EXCEEDED", "message": "service quota exceeded" }]
+    } },
+    { "conflict": { "id": "srv_beta", "name": "beta", "reason": "taken_over" } },
+    { "conflict": { "id": "srv_zeta", "name": "zeta", "reason": "taken_over" } },
+    { "tick": { "ms": 120000 } },
+    { "enable_service": { "name": "beta" } },
+    { "sent": { "op": "register", "names": ["beta"] } },
+    { "registered": { "services": [{ "name": "beta", "url": "https://beta-tester.mcpwarp.test/mcp", "id": "srv_beta", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" }, "gamma": { "state": "pending" }, "zeta": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" },
+      "zeta": { "state": "rejected", "code": "QUOTA_EXCEEDED", "lastError": "Your mcpwarp account has no services left in its quota." }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "taken_over", "id": "srv_beta", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" },
+      "zeta": { "state": "rejected", "code": "QUOTA_EXCEEDED", "lastError": "Your mcpwarp account has no services left in its quota." }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "pending", "id": "srv_beta" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" },
+      "zeta": { "state": "rejected", "code": "QUOTA_EXCEEDED", "lastError": "Your mcpwarp account has no services left in its quota." }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" },
+      "zeta": { "state": "rejected", "code": "QUOTA_EXCEEDED", "lastError": "Your mcpwarp account has no services left in its quota." }
+    } }
+  ],
+  "expectDials": 1
+}

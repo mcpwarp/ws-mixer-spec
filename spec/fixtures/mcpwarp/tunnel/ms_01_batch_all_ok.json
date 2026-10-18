@@ -1,0 +1,25 @@
+{
+  "description": "Multi-service happy path (MCPWARP.md §6A.6 G1, G2): after welcome the controller sends ONE register with all three configured services in configuration order (§2.1 Batch); the one registered answering it lists exactly those names, all in services[], so every service goes pending -> active with its id and url, and the group goes connecting -> online (no connection-level url in a group). One snapshot per processed input: the three-entry reply delivers one.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "stdio" }, { "name": "gamma", "kind": "http" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta", "gamma"] } },
+    { "registered": { "services": [
+      { "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true },
+      { "name": "beta", "url": "https://beta-tester.mcpwarp.test/mcp", "id": "srv_beta", "created": true },
+      { "name": "gamma", "url": "https://gamma-tester.mcpwarp.test/mcp", "id": "srv_gamma", "created": false }
+    ], "errors": [] } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" }, "gamma": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" }
+    } }
+  ],
+  "expectDials": 1
+}

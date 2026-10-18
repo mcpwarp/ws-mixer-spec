@@ -15,5 +15,12 @@
   "error.CONFLICT": { "label": "错误", "detail": "名称已被占用" },
   "error.UNSUPPORTED_VERSION": { "label": "错误", "detail": "需要更新插件" },
   "error.DISCONNECTED_FATAL": { "label": "错误", "detail": "无法连接到 mcpwarp" },
-  "error.INTERNAL": { "label": "错误", "detail": "意外错误" }
+  "error.INTERNAL": { "label": "错误", "detail": "意外错误" },
+  "service.pending": { "label": "正在注册…" },
+  "service.active": { "label": "已启用" },
+  "service.disabled": { "label": "已停用" },
+  "service.rejected": { "label": "已拒绝" },
+  "service.taken_over": { "label": "已被另一个实例接管" },
+  "service.unregistered": { "label": "已移除" },
+  "lastError.NO_SERVICE_REGISTERED": { "label": "错误", "detail": "未能注册任何服务" }
 }

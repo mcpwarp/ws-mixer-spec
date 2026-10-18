@@ -15,5 +15,12 @@
   "error.CONFLICT": { "label": "Error", "detail": "Name already in use" },
   "error.UNSUPPORTED_VERSION": { "label": "Error", "detail": "Plugin update required" },
   "error.DISCONNECTED_FATAL": { "label": "Error", "detail": "Connection to mcpwarp failed" },
-  "error.INTERNAL": { "label": "Error", "detail": "Unexpected error" }
+  "error.INTERNAL": { "label": "Error", "detail": "Unexpected error" },
+  "service.pending": { "label": "Registering…" },
+  "service.active": { "label": "Active" },
+  "service.disabled": { "label": "Disabled" },
+  "service.rejected": { "label": "Rejected" },
+  "service.taken_over": { "label": "Taken over by another instance" },
+  "service.unregistered": { "label": "Removed" },
+  "lastError.NO_SERVICE_REGISTERED": { "label": "Error", "detail": "No service could be registered" }
 }

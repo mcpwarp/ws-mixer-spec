@@ -1,0 +1,32 @@
+{
+  "description": "Partial success is normal (MCPWARP.md §2.3 Multi-service replies, §6A.6 G2): the registered for a four-name register puts alpha and delta in services[] and beta (CONFLICT) and gamma (QUOTA_EXCEEDED) in errors[]. The successes go active, each refusal is rejected with its wire code and §6A.4's text, and the group goes online: a partial failure never changes the group's state. Refusals are not transient, so nothing is re-sent on its own (no sent event during a long tick).",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "http" }, { "name": "gamma", "kind": "stdio" }, { "name": "delta", "kind": "http" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta", "gamma", "delta"] } },
+    { "registered": {
+      "services": [
+        { "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true },
+        { "name": "delta", "url": "https://delta-tester.mcpwarp.test/mcp", "id": "srv_delta", "created": true }
+      ],
+      "errors": [
+        { "name": "beta", "code": "CONFLICT", "message": "name in use" },
+        { "name": "gamma", "code": "QUOTA_EXCEEDED", "message": "service quota exceeded" }
+      ]
+    } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" }, "gamma": { "state": "pending" }, "delta": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "rejected", "code": "CONFLICT", "lastError": "The name is in use by another server." },
+      "gamma": { "state": "rejected", "code": "QUOTA_EXCEEDED", "lastError": "Your mcpwarp account has no services left in its quota." },
+      "delta": { "state": "active", "id": "srv_delta", "url": "https://delta-tester.mcpwarp.test/mcp" }
+    } }
+  ],
+  "expectDials": 1
+}

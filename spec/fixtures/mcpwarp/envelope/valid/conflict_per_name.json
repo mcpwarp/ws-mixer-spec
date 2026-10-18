@@ -1,0 +1,7 @@
+{
+  "description": "conflict on a multi-service connection: another session of the owner registered b-svc, so this connection loses that one name (its streams for that server are reset by the edge) and keeps every other name live. Keyed by name (id alongside); taken_over is the only reason the deployed edge sends. MCPWARP.md §2.7, §3.3",
+  "op": "conflict",
+  "message": { "v": 1, "op": "conflict", "id": "srv_b_svc", "name": "b-svc", "reason": "taken_over" },
+  "schema_valid": true,
+  "wire_valid": true
+}

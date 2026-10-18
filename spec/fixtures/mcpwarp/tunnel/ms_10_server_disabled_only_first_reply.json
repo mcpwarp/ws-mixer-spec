@@ -1,0 +1,37 @@
+{
+  "description": "A first registered whose every entry is SERVER_DISABLED is not fatal (MCPWARP.md §6A.6 G2, Fatal rule): the group goes online with every service disabled (DISABLED), keeping the ids SERVER_DISABLED carried. A dashboard enable{id, name} for alpha, matched by name, sends a register for alpha only; alpha goes pending, then active, and beta stays disabled.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "stdio" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "registered": {
+      "services": [],
+      "errors": [
+        { "name": "alpha", "code": "SERVER_DISABLED", "message": "server disabled", "id": "srv_alpha" },
+        { "name": "beta", "code": "SERVER_DISABLED", "message": "server disabled", "id": "srv_beta" }
+      ]
+    } },
+    { "enabled": { "id": "srv_alpha", "name": "alpha" } },
+    { "sent": { "op": "register", "names": ["alpha"] } },
+    { "registered": { "services": [{ "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "disabled", "id": "srv_alpha", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+      "beta": { "state": "disabled", "id": "srv_beta", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "pending", "id": "srv_alpha" },
+      "beta": { "state": "disabled", "id": "srv_beta", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "disabled", "id": "srv_beta", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." }
+    } }
+  ],
+  "expectDials": 1
+}

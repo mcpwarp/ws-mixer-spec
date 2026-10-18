@@ -1,0 +1,27 @@
+{
+  "description": "A first registered mixing SERVER_DISABLED with a refusal and no success is not fatal (MCPWARP.md §6A.6 Fatal rule): beta is disabled, not rejected, so G5's \"every configured service rejected\" does not hold and the group goes online with alpha rejected CONFLICT and beta disabled (DISABLED), waiting for beta's dashboard enable on this connection. The Go CLI exits on this mix (MCPWARP.md §11 row 50); the profile does not. Nothing is re-sent during a long tick.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "http" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "registered": {
+      "services": [],
+      "errors": [
+        { "name": "alpha", "code": "CONFLICT", "message": "name in use" },
+        { "name": "beta", "code": "SERVER_DISABLED", "message": "server disabled", "id": "srv_beta" }
+      ]
+    } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "rejected", "code": "CONFLICT", "lastError": "The name is in use by another server." },
+      "beta": { "state": "disabled", "id": "srv_beta", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." }
+    } }
+  ],
+  "expectDials": 1
+}

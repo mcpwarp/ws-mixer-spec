@@ -1,0 +1,60 @@
+{
+  "description": "OVERLOADED drops the outstanding frame unanswered (MCPWARP.md §2.6, §6A.7): with one frame in flight it is the register for gamma, which the controller re-sends after min(1000 × 2^n, 30000) ms: 1000, then 2000 for a second consecutive OVERLOADED. A registered with a services[] entry resets the counter, so the next OVERLOADED (for delta) backs off 1000 again. While online the group and the other services are unchanged (G4); the dropped service stays pending until its registered.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "http" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "registered": { "services": [
+      { "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true },
+      { "name": "beta", "url": "https://beta-tester.mcpwarp.test/mcp", "id": "srv_beta", "created": true }
+    ] } },
+    { "add_service": { "name": "gamma", "kind": "http" } },
+    { "sent": { "op": "register", "names": ["gamma"] } },
+    { "app_error": { "code": "OVERLOADED", "message": "too many concurrent app messages, try again" } },
+    { "retry": { "delayMs": 1000, "cause": "overloaded" } },
+    { "sent": { "op": "register", "names": ["gamma"] } },
+    { "app_error": { "code": "OVERLOADED", "message": "too many concurrent app messages, try again" } },
+    { "retry": { "delayMs": 2000, "cause": "overloaded" } },
+    { "sent": { "op": "register", "names": ["gamma"] } },
+    { "registered": { "services": [{ "name": "gamma", "url": "https://gamma-tester.mcpwarp.test/mcp", "id": "srv_gamma", "created": true }] } },
+    { "add_service": { "name": "delta", "kind": "stdio" } },
+    { "sent": { "op": "register", "names": ["delta"] } },
+    { "app_error": { "code": "OVERLOADED", "message": "too many concurrent app messages, try again" } },
+    { "retry": { "delayMs": 1000, "cause": "overloaded" } },
+    { "sent": { "op": "register", "names": ["delta"] } },
+    { "registered": { "services": [{ "name": "delta", "url": "https://delta-tester.mcpwarp.test/mcp", "id": "srv_delta", "created": true }] } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "pending" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" },
+      "delta": { "state": "pending" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" },
+      "delta": { "state": "active", "id": "srv_delta", "url": "https://delta-tester.mcpwarp.test/mcp" }
+    } }
+  ],
+  "expectDials": 1
+}

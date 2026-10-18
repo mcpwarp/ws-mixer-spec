@@ -1,0 +1,27 @@
+{
+  "description": "Fatal first reply (MCPWARP.md §6A.6 G5): the first registered refuses every service (alpha CONFLICT, beta QUOTA_EXCEEDED), no service has been active since the connection started, and nothing is outstanding, so the group goes error/INTERNAL with lastError \"No service could be registered.\" (no new TunnelStatusCode); the services keep their rejected entries. Like any error state it is final until the next configure: no redial during a long tick.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "http" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "registered": {
+      "services": [],
+      "errors": [
+        { "name": "alpha", "code": "CONFLICT", "message": "name in use" },
+        { "name": "beta", "code": "QUOTA_EXCEEDED", "message": "service quota exceeded" }
+      ]
+    } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" } } },
+    { "state": "error", "code": "INTERNAL", "lastError": "No service could be registered.", "services": {
+      "alpha": { "state": "rejected", "code": "CONFLICT", "lastError": "The name is in use by another server." },
+      "beta": { "state": "rejected", "code": "QUOTA_EXCEEDED", "lastError": "Your mcpwarp account has no services left in its quota." }
+    } }
+  ],
+  "expectDials": 1
+}

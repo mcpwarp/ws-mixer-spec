@@ -15,5 +15,12 @@
   "error.CONFLICT": { "label": "エラー", "detail": "この名前は既に使用されています" },
   "error.UNSUPPORTED_VERSION": { "label": "エラー", "detail": "プラグインの更新が必要です" },
   "error.DISCONNECTED_FATAL": { "label": "エラー", "detail": "mcpwarp への接続に失敗しました" },
-  "error.INTERNAL": { "label": "エラー", "detail": "予期しないエラー" }
+  "error.INTERNAL": { "label": "エラー", "detail": "予期しないエラー" },
+  "service.pending": { "label": "登録中…" },
+  "service.active": { "label": "有効" },
+  "service.disabled": { "label": "無効" },
+  "service.rejected": { "label": "拒否されました" },
+  "service.taken_over": { "label": "別のインスタンスに取得されました" },
+  "service.unregistered": { "label": "削除済み" },
+  "lastError.NO_SERVICE_REGISTERED": { "label": "エラー", "detail": "登録できたサービスがありません" }
 }

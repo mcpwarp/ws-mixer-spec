@@ -1,11 +1,23 @@
 {
   "description": "describeStatus rules for the normative status text tables (docs/MCPWARP.md section 7). One table file per locale (en.json, de.json, es.json, fr.json, ja.json, zh-CN.json), every one with exactly the key set of en.json; cases.json holds input -> expected examples every SDK runs.",
   "keyFormat": {
-    "pattern": "^(off|connecting|online|disabled|conflict|error)\\.(none|[A-Z][A-Z_]*)$",
-    "rule": "<state>.<code>, with the literal 'none' when the status carries no code. The key set of en.json is exactly the set of legal (state, code) pairings of a TunnelStatus.",
+    "pattern": "^((off|connecting|online|disabled|conflict|error)\\.(none|[A-Z][A-Z_]*)|service\\.(pending|active|disabled|rejected|taken_over|unregistered)|lastError\\.NO_SERVICE_REGISTERED)$",
+    "rule": "<state>.<code>, with the literal 'none' when the status carries no code. The <state>.<code> keys of en.json are exactly the legal (state, code) pairings of a TunnelStatus; since v0.7.0 the seven multi-service keys (multiService below) follow them.",
     "value": "{label, detail?} = describeStatus({state, code}) with no lastError. detail is left out when it would equal label.",
-    "stateLabel": "states[state] = label of any key starting with '<state>.'; every key of one state has the same label",
-    "codeSentence": "codes[code] = detail ?? label of any key ending in '.<code>'; every key of one code has the same sentence (INTERNAL pairs with connecting and error, and connecting.INTERNAL and error.INTERNAL carry the same sentence in every locale)"
+    "stateLabel": "states[state] = label of any <state>.<code> key starting with '<state>.'; every key of one state has the same label",
+    "codeSentence": "codes[code] = detail ?? label of any <state>.<code> key ending in '.<code>'; every key of one code has the same sentence (INTERNAL pairs with connecting and error, and connecting.INTERNAL and error.INTERNAL carry the same sentence in every locale)"
+  },
+  "multiService": {
+    "source": "docs/MCPWARP.md section 6A.9",
+    "serviceLabels": "service.<state> = {label} for each ServiceState: pending, active, disabled, rejected, taken_over, unregistered",
+    "noServiceRegistered": "lastError.NO_SERVICE_REGISTERED = {label: the locale's error label, detail} = describeStatus({state: \"error\", code: \"INTERNAL\", lastError: \"No service could be registered.\"})",
+    "describeStatusRule": "state error, code INTERNAL and lastError exactly \"No service could be registered.\": detail = the lastError.NO_SERVICE_REGISTERED detail instead of the INTERNAL sentence; services is ignored",
+    "describeServiceStatus": [
+      "label = the service.<state> label; an unknown state -> String(state)",
+      "rejected: detail = the error.<CODE> detail for INVALID_NAME, USERNAME_REQUIRED, QUOTA_EXCEEDED, CONFLICT; the error.UNAUTHORIZED detail for UNAUTHENTICATED, FORBIDDEN; else the error.INTERNAL detail",
+      "disabled with code DISABLED: detail = the disabled.DISABLED label",
+      "otherwise no detail; lastError is never shown; detail is left out when equal to label"
+    ]
   },
   "locales": ["en", "de", "es", "fr", "ja", "zh-CN"],
   "localeResolution": {
@@ -64,6 +76,12 @@
     "es:error.INVALID_NAME",
     "fr:error.INVALID_NAME",
     "ja:error.INVALID_NAME",
-    "zh-CN:error.INVALID_NAME"
+    "zh-CN:error.INVALID_NAME",
+    "en:service.pending", "en:service.active", "en:service.disabled", "en:service.rejected", "en:service.taken_over", "en:service.unregistered", "en:lastError.NO_SERVICE_REGISTERED",
+    "de:service.pending", "de:service.active", "de:service.disabled", "de:service.rejected", "de:service.taken_over", "de:service.unregistered", "de:lastError.NO_SERVICE_REGISTERED",
+    "es:service.pending", "es:service.active", "es:service.disabled", "es:service.rejected", "es:service.taken_over", "es:service.unregistered", "es:lastError.NO_SERVICE_REGISTERED",
+    "fr:service.pending", "fr:service.active", "fr:service.disabled", "fr:service.rejected", "fr:service.taken_over", "fr:service.unregistered", "fr:lastError.NO_SERVICE_REGISTERED",
+    "ja:service.pending", "ja:service.active", "ja:service.disabled", "ja:service.rejected", "ja:service.taken_over", "ja:service.unregistered", "ja:lastError.NO_SERVICE_REGISTERED",
+    "zh-CN:service.pending", "zh-CN:service.active", "zh-CN:service.disabled", "zh-CN:service.rejected", "zh-CN:service.taken_over", "zh-CN:service.unregistered", "zh-CN:lastError.NO_SERVICE_REGISTERED"
   ]
 }

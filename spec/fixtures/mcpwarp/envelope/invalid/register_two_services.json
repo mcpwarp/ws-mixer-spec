@@ -1,8 +1,0 @@
-{
-  "description": "register with two services: an agent MUST NOT send more than one entry per register (maxItems 1, enforced in code by check-fixtures.mjs). An edge MAY answer error{TOO_MANY_SERVICES} but is not required to (the deployed edge's threshold is > 100), so §2 fixes no edge answer: expect is a SCHEMA_* hint that edge runners skip. MCPWARP.md §2.1, §2.6, §10.2",
-  "op": "register",
-  "message": { "v": 1, "op": "register", "services": [{ "name": "anki", "kind": "http" }, { "name": "notes", "kind": "http" }] },
-  "schema_valid": false,
-  "wire_valid": false,
-  "expect": { "error_code": "SCHEMA_MAX_ITEMS", "message_contains": "maxItems" }
-}

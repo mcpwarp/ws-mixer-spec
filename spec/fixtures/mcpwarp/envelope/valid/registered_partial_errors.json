@@ -1,0 +1,18 @@
+{
+  "description": "registered answering a four-name register with partial success: each requested name is in exactly one of services[] or errors[]. Partial success is normal and changes no connection state; only SERVER_DISABLED carries the server id. MCPWARP.md §2.3, §2.5",
+  "op": "registered",
+  "message": {
+    "v": 1,
+    "op": "registered",
+    "services": [
+      { "name": "anki", "id": "srv_anki", "url": "https://anki-tester.mcpwarp.test/mcp", "created": false },
+      { "name": "b-svc", "id": "srv_b_svc", "url": "https://b-svc-tester.mcpwarp.test/mcp", "created": true }
+    ],
+    "errors": [
+      { "name": "notes", "code": "CONFLICT", "message": "name in use" },
+      { "name": "wiki", "code": "SERVER_DISABLED", "message": "server disabled", "id": "srv_wiki" }
+    ]
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

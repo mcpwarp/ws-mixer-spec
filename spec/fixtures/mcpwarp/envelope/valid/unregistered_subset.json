@@ -1,0 +1,7 @@
+{
+  "description": "unregistered answering an unregister of a subset (notes, b-svc, gone): only the held names come back with their server ids, a name the connection did not hold (gone) is silently absent, there is no errors list, and every other name stays live. MCPWARP.md §2.3",
+  "op": "unregistered",
+  "message": { "v": 1, "op": "unregistered", "services": [{ "name": "notes", "id": "srv_notes" }, { "name": "b-svc", "id": "srv_b_svc" }] },
+  "schema_valid": true,
+  "wire_valid": true
+}

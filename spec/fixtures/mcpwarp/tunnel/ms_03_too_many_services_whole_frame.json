@@ -1,0 +1,26 @@
+{
+  "description": "TOO_MANY_SERVICES is a whole-frame answer (MCPWARP.md §2.6, §6A.6 G7): an app error op, no registered reply, no per-entry result. It answers the outstanding register (add_service beta), so beta becomes rejected with code TOO_MANY_SERVICES and the generic text, nothing is re-sent during a long tick, and the online group and the active alpha are unchanged. A conforming agent never sends more than 100 entries, so the edge's threshold is not reached here; the fixture pins the reaction to the answer, as 43_too_many_services_error_op does for one service.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha"] } },
+    { "registered": { "services": [{ "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true }] } },
+    { "add_service": { "name": "beta", "kind": "http" } },
+    { "sent": { "op": "register", "names": ["beta"] } },
+    { "app_error": { "code": "TOO_MANY_SERVICES", "message": "too many services: 101 > 100" } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" } } },
+    { "state": "online", "services": { "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" } } },
+    { "state": "online", "services": { "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" }, "beta": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "rejected", "code": "TOO_MANY_SERVICES", "lastError": "Something went wrong; the log has the details." }
+    } }
+  ],
+  "expectDials": 1
+}

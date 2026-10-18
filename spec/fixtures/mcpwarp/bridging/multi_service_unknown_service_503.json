@@ -1,0 +1,16 @@
+{
+  "description": "Multi-service selection (MCPWARP.md §4.8 row 3b): the Host label c-svc-alice names c-svc, which this agent does not hold, so no service is selected and the request is answered 503 {\"error\":\"service unavailable\"} without calling any handler. Selection comes after the path check: the same Host with a path other than /mcp is a 404 (multi_service_unknown_service_non_mcp_404).",
+  "username": "alice",
+  "services": [
+    { "name": "a-svc", "id": "4f1d2c3b-0a1e-4c5d-9e8f-00000000000a", "url": "https://a-svc-alice.tunnel.example/mcp", "state": "active" },
+    { "name": "b-svc", "id": "4f1d2c3b-0a1e-4c5d-9e8f-00000000000b", "url": "https://b-svc-alice.tunnel.example/mcp", "state": "active" }
+  ],
+  "routedTo": null,
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: c-svc-alice.tunnel.example\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": null,
+  "out": "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 31\r\n\r\n{\"error\":\"service unavailable\"}",
+  "notes": "A selected service answers its own 503 when it cannot serve: service disabled for a dashboard-disabled one (row 3d), service unavailable for a locally disabled, rejected, unregistered or never-active one (row 3e)."
+}

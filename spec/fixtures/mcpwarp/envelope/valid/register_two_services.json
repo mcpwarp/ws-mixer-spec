@@ -1,0 +1,7 @@
+{
+  "description": "register with two services: legal since v0.7.0 (1..100 entries per register, maxItems 100); until v0.6.3 this was invalid (maxItems 1). A single-service SDK still sends one entry; a multi-service controller sends its whole list (or the added subset) in one frame. MCPWARP.md §2.1",
+  "op": "register",
+  "message": { "v": 1, "op": "register", "services": [{ "name": "anki", "kind": "http" }, { "name": "notes", "kind": "http" }] },
+  "schema_valid": true,
+  "wire_valid": true
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Multi-service selection by header (MCPWARP.md §4.8 step 1): one connection holds a-svc and b-svc, both active. The request carries X-Mcpwarp-Server-Id (here in upper case: header names match case-insensitively) equal to b-svc's registered id, so b-svc's handler serves it even though its Host names a-svc: the header, when present, decides alone and the Host label is not consulted. The application still sees the request unchanged, Host and both X-Mcpwarp-* headers included. Header selection is opt-in: the runner MUST enable the SDK option trustServerIdHeader (default off, under which the Host label alone selects and this request would go to a-svc); a runner that cannot skips the fixture with a note (runnerRequirement).",
+  "runnerRequirement": "trust-server-id-header",
+  "username": "alice",
+  "services": [
+    { "name": "a-svc", "id": "4f1d2c3b-0a1e-4c5d-9e8f-00000000000a", "url": "https://a-svc-alice.tunnel.example/mcp", "state": "active" },
+    { "name": "b-svc", "id": "4f1d2c3b-0a1e-4c5d-9e8f-00000000000b", "url": "https://b-svc-alice.tunnel.example/mcp", "state": "active" }
+  ],
+  "routedTo": "b-svc",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: a-svc-alice.tunnel.example\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nX-MCPWARP-SERVER-ID: 4f1d2c3b-0a1e-4c5d-9e8f-00000000000b\r\nX-Mcpwarp-Server-Name: b-svc\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "https://a-svc-alice.tunnel.example/mcp",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "a-svc-alice.tunnel.example",
+      "user-agent": "Go-http-client/1.1",
+      "x-mcpwarp-server-id": "4f1d2c3b-0a1e-4c5d-9e8f-00000000000b",
+      "x-mcpwarp-server-name": "b-svc"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+  },
+  "out": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n28\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\r\n0\r\n\r\n",
+  "notes": "The runner registers both services on one connection with registered.services[] = services[] (name, id, url), gives each its own instance of the handler, writes `in` on a stream and checks that only routedTo's instance was called. An edge that sets the header never sends one that disagrees with Host; the disagreement only proves the precedence. An id that matches no held service is 503 service unavailable, with no fallback to the Host label."
+}

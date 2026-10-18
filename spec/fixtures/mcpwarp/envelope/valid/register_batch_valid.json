@@ -1,0 +1,11 @@
+{
+  "description": "register from a multi-service controller: three services in one frame, in configuration order, keys in the order v, op, services and name, kind. 1..100 entries are legal and no name appears twice; the edge answers with exactly one registered listing exactly these three names. MCPWARP.md §2.1, §2.3",
+  "op": "register",
+  "message": {
+    "v": 1,
+    "op": "register",
+    "services": [{ "name": "anki", "kind": "http" }, { "name": "notes", "kind": "stdio" }, { "name": "b-svc", "kind": "http" }]
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

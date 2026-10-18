@@ -1,0 +1,15 @@
+{
+  "description": "Precedence 404 > selection (MCPWARP.md §4.8): the Host names c-svc, which this agent does not hold, but the path is /healthz, so the path check answers first with 404 {\"error\":\"not_found\"} and selection is never reached (routedTo null).",
+  "username": "alice",
+  "services": [
+    { "name": "a-svc", "id": "4f1d2c3b-0a1e-4c5d-9e8f-00000000000a", "url": "https://a-svc-alice.tunnel.example/mcp", "state": "active" },
+    { "name": "b-svc", "id": "4f1d2c3b-0a1e-4c5d-9e8f-00000000000b", "url": "https://b-svc-alice.tunnel.example/mcp", "state": "active" }
+  ],
+  "routedTo": null,
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "GET /healthz HTTP/1.1\r\nHost: c-svc-alice.tunnel.example\r\nuser-agent: Go-http-client/1.1\r\n\r\n",
+  "upstream": null,
+  "out": "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: 21\r\n\r\n{\"error\":\"not_found\"}"
+}

@@ -1,0 +1,40 @@
+{
+  "description": "Dashboard disable/enable per service (MCPWARP.md §2.7 multi-service table): disable carries no name and is keyed by id, so disable{srv_beta} disables beta only (DISABLED, its id kept, no url); a disable for an id this connection never learned (srv_other, another service of the owner: disable fans out) is held and changes nothing. enable{id, name} is matched by name: the controller sends a register for beta only, beta is pending until its registered, then active. The group stays online throughout.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "stdio" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "registered": { "services": [
+      { "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true },
+      { "name": "beta", "url": "https://beta-tester.mcpwarp.test/mcp", "id": "srv_beta", "created": true }
+    ] } },
+    { "disabled": { "id": "srv_beta", "reason": "disabled" } },
+    { "disabled": { "id": "srv_other", "reason": "disabled" } },
+    { "enabled": { "id": "srv_beta", "name": "beta" } },
+    { "sent": { "op": "register", "names": ["beta"] } },
+    { "registered": { "services": [{ "name": "beta", "url": "https://beta-tester.mcpwarp.test/mcp", "id": "srv_beta", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "disabled", "id": "srv_beta", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "pending", "id": "srv_beta" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" }
+    } }
+  ],
+  "expectDials": 1
+}

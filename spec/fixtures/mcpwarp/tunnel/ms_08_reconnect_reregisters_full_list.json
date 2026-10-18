@@ -1,0 +1,84 @@
+{
+  "description": "Reconnect (MCPWARP.md §3.2 Re-register on every welcome, §6A.6 G8, G1): before the loss alpha is active, beta rejected CONFLICT, gamma dashboard-disabled (SERVER_DISABLED), delta locally disabled (disable(delta) sent an unregister for it) and epsilon taken over. The lost connection is connecting/DISCONNECTED and every service keeps its state. The new connection's welcome re-registers the full list minus the locally disabled and taken-over names, in configuration order: alpha, beta and gamma (refused and dashboard-disabled names included; the edge answers them again), which go pending. The answer restores their states and the group goes online.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "http" }, { "name": "gamma", "kind": "http" }, { "name": "delta", "kind": "stdio" }, { "name": "epsilon", "kind": "http" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta", "gamma", "delta", "epsilon"] } },
+    { "registered": {
+      "services": [
+        { "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true },
+        { "name": "delta", "url": "https://delta-tester.mcpwarp.test/mcp", "id": "srv_delta", "created": true },
+        { "name": "epsilon", "url": "https://epsilon-tester.mcpwarp.test/mcp", "id": "srv_epsilon", "created": true }
+      ],
+      "errors": [
+        { "name": "beta", "code": "CONFLICT", "message": "name in use" },
+        { "name": "gamma", "code": "SERVER_DISABLED", "message": "server disabled", "id": "srv_gamma" }
+      ]
+    } },
+    { "disable_service": { "name": "delta" } },
+    { "sent": { "op": "unregister", "names": ["delta"] } },
+    { "unregistered": { "services": [{ "name": "delta", "id": "srv_delta" }] } },
+    { "conflict": { "id": "srv_epsilon", "name": "epsilon", "reason": "taken_over" } },
+    { "disconnect": { "fatal": false, "wsCode": 1006 } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta", "gamma"] } },
+    { "registered": {
+      "services": [{ "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": false }],
+      "errors": [
+        { "name": "beta", "code": "CONFLICT", "message": "name in use" },
+        { "name": "gamma", "code": "SERVER_DISABLED", "message": "server disabled", "id": "srv_gamma" }
+      ]
+    } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" }, "gamma": { "state": "pending" }, "delta": { "state": "pending" }, "epsilon": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "rejected", "code": "CONFLICT", "lastError": "The name is in use by another server." },
+      "gamma": { "state": "disabled", "id": "srv_gamma", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+      "delta": { "state": "active", "id": "srv_delta", "url": "https://delta-tester.mcpwarp.test/mcp" },
+      "epsilon": { "state": "active", "id": "srv_epsilon", "url": "https://epsilon-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "rejected", "code": "CONFLICT", "lastError": "The name is in use by another server." },
+      "gamma": { "state": "disabled", "id": "srv_gamma", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+      "delta": { "state": "disabled", "id": "srv_delta" },
+      "epsilon": { "state": "active", "id": "srv_epsilon", "url": "https://epsilon-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "rejected", "code": "CONFLICT", "lastError": "The name is in use by another server." },
+      "gamma": { "state": "disabled", "id": "srv_gamma", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+      "delta": { "state": "disabled", "id": "srv_delta" },
+      "epsilon": { "state": "taken_over", "id": "srv_epsilon", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." }
+    } },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying.", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "rejected", "code": "CONFLICT", "lastError": "The name is in use by another server." },
+      "gamma": { "state": "disabled", "id": "srv_gamma", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+      "delta": { "state": "disabled", "id": "srv_delta" },
+      "epsilon": { "state": "taken_over", "id": "srv_epsilon", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." }
+    } },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying.", "services": {
+      "alpha": { "state": "pending", "id": "srv_alpha" },
+      "beta": { "state": "pending" },
+      "gamma": { "state": "pending", "id": "srv_gamma" },
+      "delta": { "state": "disabled", "id": "srv_delta" },
+      "epsilon": { "state": "taken_over", "id": "srv_epsilon", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "rejected", "code": "CONFLICT", "lastError": "The name is in use by another server." },
+      "gamma": { "state": "disabled", "id": "srv_gamma", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." },
+      "delta": { "state": "disabled", "id": "srv_delta" },
+      "epsilon": { "state": "taken_over", "id": "srv_epsilon", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." }
+    } }
+  ],
+  "expectDials": 2
+}

@@ -1,5 +1,5 @@
 {
-  "description": "describeStatus(input.status, {locale: input.locale}) must return exactly expect (detail absent when not listed). Rules in rules.json; tables in <locale>.json. A locale of null means the option is absent.",
+  "description": "describeStatus(input.status, {locale: input.locale}), or describeServiceStatus(input.service, {locale: input.locale}) for a case with input.service (MCPWARP.md §6A.9, multi-service SDKs only), must return exactly expect (detail absent when not listed). Rules in rules.json; tables in <locale>.json. A locale of null means the option is absent.",
   "cases": [
     {
       "description": "online with a url: label only, in en",
@@ -130,6 +130,61 @@
       "description": "a plain connecting status in fr has no detail",
       "input": { "status": { "state": "connecting" }, "locale": "fr" },
       "expect": { "label": "Connexion…" }
+    },
+    {
+      "description": "multi-service group, fatal first reply (MCPWARP.md §6A.9): error/INTERNAL with lastError exactly \"No service could be registered.\" shows the lastError.NO_SERVICE_REGISTERED detail, not the INTERNAL sentence; services is ignored",
+      "input": { "status": { "state": "error", "code": "INTERNAL", "lastError": "No service could be registered.", "services": { "alpha": { "state": "rejected", "code": "CONFLICT", "lastError": "The name is in use by another server." } } }, "locale": "en" },
+      "expect": { "label": "Error", "detail": "No service could be registered" }
+    },
+    {
+      "description": "the same group status in ja",
+      "input": { "status": { "state": "error", "code": "INTERNAL", "lastError": "No service could be registered.", "services": {} }, "locale": "ja" },
+      "expect": { "label": "エラー", "detail": "登録できたサービスがありません" }
+    },
+    {
+      "description": "describeServiceStatus (input.service): rejected CONFLICT shows the error.CONFLICT detail; lastError is never shown",
+      "input": { "service": { "state": "rejected", "code": "CONFLICT", "lastError": "The name is in use by another server." }, "locale": "en" },
+      "expect": { "label": "Rejected", "detail": "Name already in use" }
+    },
+    {
+      "description": "describeServiceStatus: rejected FORBIDDEN shows the error.UNAUTHORIZED detail, in de",
+      "input": { "service": { "state": "rejected", "code": "FORBIDDEN", "lastError": "The token is not allowed to publish this service." }, "locale": "de" },
+      "expect": { "label": "Abgelehnt", "detail": "Zugriffstoken wurde abgelehnt" }
+    },
+    {
+      "description": "describeServiceStatus: rejected by a whole-frame TOO_MANY_SERVICES shows the error.INTERNAL detail, in fr",
+      "input": { "service": { "state": "rejected", "code": "TOO_MANY_SERVICES", "lastError": "Something went wrong; the log has the details." }, "locale": "fr" },
+      "expect": { "label": "Refusé", "detail": "Erreur inattendue" }
+    },
+    {
+      "description": "describeServiceStatus: disabled in the dashboard (code DISABLED) shows the disabled.DISABLED label as its detail, in zh-CN",
+      "input": { "service": { "state": "disabled", "id": "srv_alpha", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." }, "locale": "zh-CN" },
+      "expect": { "label": "已停用", "detail": "已在 mcpwarp 控制台中停用" }
+    },
+    {
+      "description": "describeServiceStatus: locally disabled (no code) has no detail, in es",
+      "input": { "service": { "state": "disabled", "id": "srv_alpha" }, "locale": "es" },
+      "expect": { "label": "Desactivado" }
+    },
+    {
+      "description": "describeServiceStatus: taken_over has no detail even with its code, in ja",
+      "input": { "service": { "state": "taken_over", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." }, "locale": "ja" },
+      "expect": { "label": "別のインスタンスに取得されました" }
+    },
+    {
+      "description": "describeServiceStatus: active, locale \"zh\" resolves to zh-CN; url is not shown",
+      "input": { "service": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" }, "locale": "zh" },
+      "expect": { "label": "已启用" }
+    },
+    {
+      "description": "describeServiceStatus: pending with no locale option is en",
+      "input": { "service": { "state": "pending" }, "locale": null },
+      "expect": { "label": "Registering…" }
+    },
+    {
+      "description": "describeServiceStatus: an unknown state is shown as its own string",
+      "input": { "service": { "state": "paused" }, "locale": "en" },
+      "expect": { "label": "paused" }
     }
   ]
 }
