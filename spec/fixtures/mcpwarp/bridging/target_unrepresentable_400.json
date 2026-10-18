@@ -1,0 +1,12 @@
+{
+  "description": "Target mode: a request whose forwarded header value holds a NUL byte cannot be carried by a web Request / HTTP client, and is answered 400 {\"error\":\"request cannot be represented as a web Request\"} without contacting the local server, the same reply as in handler mode, never a 500 or a 502. MCPWARP.md §4.5",
+  "sdkState": "online",
+  "mode": "target",
+  "target": "http://127.0.0.1:3000/mcp",
+  "limits": { "maxRequestBodyBytes": 4194304, "targetTimeoutMs": 30000 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nx-bad: a\u0000b\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": null,
+  "out": "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: 58\r\n\r\n{\"error\":\"request cannot be represented as a web Request\"}",
+  "notes": "NUL is the one byte every SDK's request type rejects (fetch Headers, Rust http::HeaderValue, Go net/http, Python's NUL/CR/LF check); other control bytes are runtime-dependent and not pinned. The body is read before the reply, as for any request that reaches row 6 of §4.4."
+}

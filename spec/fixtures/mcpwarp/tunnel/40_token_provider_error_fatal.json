@@ -1,0 +1,21 @@
+{
+  "description": "Unmarked token provider failure (MCPWARP.md §5.2; CLIENT-SDK.md Provider failure and Fatal set rows): the provider throws an error without the token-unavailable marker, which is fatal: error/DISCONNECTED_FATAL, no socket dialed and no redial during a long tick. The same config then starts again, and the provider's token goes online.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "token_provider": { "result": "error" } },
+    { "configure": {} },
+    { "tick": { "ms": 120000 } },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "error", "code": "DISCONNECTED_FATAL", "lastError": "The connection to mcpwarp failed." },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 1
+}

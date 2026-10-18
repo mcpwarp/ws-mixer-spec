@@ -291,25 +291,34 @@ One HTTP request on one stream, as raw HTTP/1.1 text with `\r\n` line ends:
 | `sdkState` | `online`, `disabled` or `closing` when the request arrives. A runner gets there through the fake edge: `online` = the agent has received `registered` for its name; `disabled` = after a matching `disable` op on the live connection; `closing` = after `close()` was called but before the socket closed (the fake edge withholds `unregistered` and the close, and opens the stream in that window). MCPWARP.md §10.3 |
 | `mode` | `handler` or `target`; `target` mode adds `target`, the local server URL |
 | `limits` | `maxRequestBodyBytes` (default 4194304), `targetTimeoutMs` (target only) |
-| `handler` | `{behaviour}`: `echo` (200, the request's `content-type` and body, no Content-Length), `throw`, `hang` (no response headers ever; target mode). In target mode it describes the local server |
+| `handler` | `{behaviour}`: `echo` (200, the request's `content-type` and body, no Content-Length), `throw`, `hang` (no response headers ever; target mode), `status` with `{status}` (a response with that status and an empty body; outside `200..599` the SDK answers `500` `handler error`, `mcp_handler_status_600_500.json`). In target mode it describes the local server |
 | `in` | the bytes the edge writes on the stream before it CLOSEs its write side (no `Authorization`, the edge strips it) |
 | `inExpand` | optional `{marker: {repeat, count}}`: replace the marker in `in` with `repeat` × `count` before writing (`head_431.json`, whose head is over 64 KiB) |
 | `inRest` | optional: bytes the edge writes only after the SDK's response head has arrived; the request is `in` + `inRest` (`body_413_streamed_reset.json`) |
-| `upstream` | the request the app receives: `{method, url, headers, body}` with lower-case header names, or `null` when the app MUST NOT be called; with `outReset` there is no `body` (the app reads a body stream that fails) |
+| `upstream` | the request the app receives: `{method, url, headers, body}` with lower-case header names, or `null` when the app MUST NOT be called; with `outReset` there is no `body` (the app reads a body stream that fails). `url` is compared byte for byte: its target is the received one with the fragment cut at the first `#`, absolute-form cut to path + query, and every byte outside MCPWARP.md §4.3's allowed set `%XX`-escaped once in uppercase hex (`%` itself never touched); in target mode the target URL's own query comes first, joined to the request's with `&`, both verbatim (`target_*.json`), and a target URL with an empty path gets `/`, as the local server receives it (`http://127.0.0.1:3000` + `?x=1` → `http://127.0.0.1:3000/?x=1`) |
 | `out` | the bytes the SDK writes back before it CLOSEs; with `outReset`, the response head the stream MUST start with (later body bytes not compared) |
 | `outReset` | optional `{code}`: the stream ends with RESET of this WIRE.md §2.8 code number instead of CLOSE; `{"code": 7}` (`CANCEL`) for a streamed body that goes over the cap after the response head but before the response is complete (MCPWARP.md §4.2; a complete response ends with CLOSE). Every `*_reset` fixture applies only to an SDK adapter that streams the request body; a buffering one, or a runner that only drives a buffering path, skips them with a note |
 
-An SDK-generated error reply (MCPWARP.md §4.5: 404, 413, 431, 500 `handler error`, 503, 504) is compared
-byte-exact; to `HEAD` it is the same head with no body (`head_mcp_503.json`). A response that comes from the app is compared by status line, header set (names
+An SDK-generated error reply (MCPWARP.md §4.5: 400 `unsupported request target form` and `request cannot be
+represented as a web Request` — a header value with NUL, CR or LF, or the method `CONNECT`, `TRACE` or `TRACK`,
+in both modes (`target_unrepresentable_400.json`, `handler_connect_400.json`) — 404, 413, 431, 500 `handler error`, 503, 504) is compared
+byte-exact; to `HEAD` it is the same head with no body, a head-parse `400` included (`head_mcp_503.json`,
+`head_mcp_400_headonly.json`). A response that comes from the app is compared by status line, header set (names
 case-insensitive, order free) and de-chunked body; chunk boundaries are not normative. File names end in the
-expected status (`_404`), except `mcp_post_ok` and `notification_passthrough` (200) and the `outReset`
-fixtures, which end in `_reset`. A stream answered `404`/`503` with request body bytes still unread ends with
+expected status (`_404`), except `mcp_post_ok`, `notification_passthrough` and the `target_*` encoding fixtures
+without a status suffix (200), `head_mcp_400_headonly` (400), and the `outReset` fixtures, which end in `_reset`. A stream answered `404`/`503` with request body bytes still unread ends with
 CLOSE after the SDK drains the body, never RESET, also when the body turns out malformed (MCPWARP.md §4.4).
 
 ### `tunnel/` and `status-text/`
 
 `tunnel/README.md` defines the event-sequence shape and runner contract, including "Running the fixtures"
-(observing `onRetry`, driving `disconnect.fatal`, the exact snapshot comparison). `status-text/rules.json` states the
+(observing `onRetry`, driving `disconnect.fatal`, the exact snapshot comparison). Its Events table is the
+vocabulary the checker reads, including `token_provider {result: ok|unavailable|error}` (the result of the
+token provider's next call; a fixture with one passes the token as a provider), `drain {reason?, conn?,
+retry_after_ms?}`, `disabled {reason?, id?, conn?}` (a server id the agent may not know) and
+`disconnect {…, flush_after?}` (edge messages received before the close but delivered after the disconnect
+notification; a fixture using it carries `runnerRequirement: "post-disconnect-delivery"`, and a runner that
+cannot force that order skips it with a note), and the `retry` cause `token-refresh`. `status-text/rules.json` states the
 `describeStatus` rules, `cases.json` holds input → expected examples, and `<locale>.json` maps every legal
 `<state>.<code|none>` pairing to `{label, detail?}`.
 
@@ -343,7 +352,10 @@ earns its keep, as the arbiter that keeps independent SDKs honest with each othe
 1. Every `fixtures/control/**/*.json`'s `schema_valid` matches what `control.schema.json` (strict) says
    about `.message`, and `wire_valid` matches what `control.relaxed.schema.json` (relaxed) says. Its `oneOf`
    is implemented correctly: **exactly one** `$defs` entry must match, not merely "at least one" — a message
-   that satisfied two branches at once would previously have been accepted.
+   that satisfied two branches at once would previously have been accepted. `minLength`/`maxLength` count
+   Unicode code points, as JSON Schema does (WIRE.md section 2.7 String limits), not UTF-16 units
+   (`control/error/{valid,invalid}/message_102[45]_code_points_non_bmp.json`); a file name of the form
+   `<field>_<N>_code_points…` must match the code-point count of that field in `.message`.
 2. `control.relaxed.schema.json` is re-derived from `control.schema.json` on every run and compared,
    byte-for-byte, against the checked-in file; a stale generated file fails the build. Every fixture with
    `wire_valid: true` is also, as a consequence of (1), asserted to pass the relaxed schema.
@@ -373,17 +385,26 @@ earns its keep, as the arbiter that keeps independent SDKs honest with each othe
 8. `fixtures/mcpwarp/bridging/`: required keys and enums; `in` parses as a request (request line, CRLF lines,
    exactly one `Host`, no `Authorization`, framing that matches the body) and `out` as a response (status line,
    valid Content-Length or chunked framing); the `out` status equals the file name's and the one the precedence
-   431 > 404 > 503 > 413 > app gives; the reason phrase is the RFC 9110 one (413 `Content Too Large`); SDK error
+   431 (head size, blank line counted) > 400 (target neither origin-form nor `http(s)://` absolute-form) > 404
+   > 503 > 413 > 400 (a forwarded header value or `Host` holding NUL, CR or LF) > app gives, where a `status`
+   handler outside `200..599` gives 500; the reason phrase is the RFC 9110 one (413 `Content Too Large`); SDK error
    replies equal the §4.5 bytes exactly (`Content-Type: application/json`, `Content-Length`, `{"error": ...}` with
    the §4 message; head only for a `HEAD` request); `inRest` is appended to `in`; an `outReset` fixture is named
    `*_reset`, has `outReset {code}` = `CANCEL` (7), a chunked body over the cap, an `inRest`, an `out` that is
-   the app's response head alone and an `upstream` without `body`; `upstream` is `null` for 404/413/431/503
+   the app's response head alone and an `upstream` without `body`; `upstream` is `null` for 400/404/413/431/503
    and otherwise equals the forwarded request (handler: `https://<Host><target>`, end-to-end headers without
-   `expect`/`content-length`; target: target URL plus the query, `host` removed, `accept-encoding: identity`,
-   `x-forwarded-host`, `x-forwarded-proto: https`); an `echo` response body equals the request body.
+   `expect`/`content-length`; target: the target URL with its own query, then `&` and the request's query,
+   verbatim, `host` removed, `accept-encoding: identity`, `x-forwarded-host`, `x-forwarded-proto: https`), where
+   `<target>` is the received target with the fragment cut, absolute-form cut to path + query, and every byte
+   outside the §4.3 allowed set `%XX`-escaped once in uppercase hex, compared byte for byte; an `echo` response
+   body equals the request body.
 9. `fixtures/mcpwarp/tunnel/` (skipped with a note when absent): `description`, `config`, `events`, non-empty
-   `expect`; every event (and `burst` item) has exactly one key, an event name from `tunnel/README.md`'s
-   Events table, and only that event's payload keys (required ones present); every snapshot has only `state`,
+   `expect`; every event (and `burst` / `disconnect.flush_after` item) has exactly one key, an event name from
+   `tunnel/README.md`'s Events table, and only that event's payload keys (required ones present); a `burst`
+   holds only `configure`/`stop`, a `flush_after` only edge messages without `conn`; `retry.cause` is one of
+   `dial`, `lost`, `register`, `overloaded`, `drain`, `token-refresh` (the last with `delayMs` 0);
+   `token_provider.result` is `ok`, `unavailable` or `error`; a `drain` with `retry_after_ms` is followed by a
+   `retry {cause: "drain"}` whose `delayMs` is within `retry_after_ms … retry_after_ms + 2000`; every snapshot has only `state`,
    `code`, `lastError`, `url`; `code` is absent (no code) or a TunnelStatusCode string (`null` and `"none"` are
    rejected) and `(state, code)` is a legal pairing; `lastError` is present exactly when a code is, is one of
    the MCPWARP.md §6.6 constants for that code (`connecting`/`INTERNAL` and `error`/`INTERNAL` share one), and

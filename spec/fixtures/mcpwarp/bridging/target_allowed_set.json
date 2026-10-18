@@ -1,0 +1,21 @@
+{
+  "description": "The pinned allowed set (MCPWARP.md §4.3), one byte of each class in the query: unreserved (a letter of each case, a digit, `- . _ ~`) and every sub-delim but `'` (`! $ & ( ) * + , ; =`) pass unescaped, as do `: @ / ?` and `[ ]`; the existing escape `%41` stays `%41`, never decoded; `\" < > \\ ^ ` { | }` become `%22 %3C %3E %5C %5E %60 %7B %7C %7D` (uppercase hex); the non-ASCII `ü` (bytes C3 BC) becomes `%C3%BC`.",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp?u=Az09-._~&s=!$&()*+,;=&p=:@/?&b=[]&e=%41&x=\"<>\\^`{|}&n=ü HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "https://notes-tester.mcpwarp.test/mcp?u=Az09-._~&s=!$&()*+,;=&p=:@/?&b=[]&e=%41&x=%22%3C%3E%5C%5E%60%7B%7C%7D&n=%C3%BC",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "notes-tester.mcpwarp.test",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+  },
+  "out": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n28\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\r\n0\r\n\r\n",
+  "notes": "Not covered here: `'`, which is in the allowed set but MAY be escaped as %27 in the query by an SDK that hands the app a WHATWG-normalised URL (§4.3), and cannot go in the path because only the exact path /mcp is forwarded; a space or a control byte, which cannot occur raw in a request line the §4.2 grammar accepts."
+}

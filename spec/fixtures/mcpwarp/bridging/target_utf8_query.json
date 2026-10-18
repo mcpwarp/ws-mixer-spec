@@ -1,0 +1,21 @@
+{
+  "description": "The forwarded request target is percent-encoded from the received bytes exactly once (MCPWARP.md §4.3): a raw UTF-8 query `?q=café` (bytes 63 61 66 C3 A9) reaches the handler as `?q=caf%C3%A9`, uppercase hex, never double-encoded as `caf%C3%83%C2%A9` (the bytes read as latin1 and encoded again).",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp?q=café HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "https://notes-tester.mcpwarp.test/mcp?q=caf%C3%A9",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "notes-tester.mcpwarp.test",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+  },
+  "out": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n28\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\r\n0\r\n\r\n",
+  "notes": "The `in` text is written to the stream as UTF-8, so `é` is the two bytes C3 A9. Compare upstream.url byte for byte: a runtime URL object must not decode the escape or re-encode the raw bytes."
+}

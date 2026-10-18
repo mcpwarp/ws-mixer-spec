@@ -1,0 +1,12 @@
+{
+  "description": "hello.v written as true: a boolean is never an integer (WIRE.md section 2.7 Integer fields row), so v fails its type check -- a malformed hello, not a version mismatch. A decoder that coerces true to 1 is wrong.",
+  "message": {
+    "t": "hello",
+    "v": true,
+    "token": "eyJhbGciOiJIUzI1NiJ9.abc123",
+    "agent": { "sdk": "ws-mixer-py", "sdk_version": "0.2.0" }
+  },
+  "schema_valid": false,
+  "wire_valid": false,
+  "expect": { "error_code": "PROTOCOL_ERROR", "message_contains": "v" }
+}

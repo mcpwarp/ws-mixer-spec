@@ -1,0 +1,11 @@
+{
+  "description": "Every reply the SDK generates to a request line that parsed with method HEAD is head-only, including a head-parse error (MCPWARP.md §4.5): HEAD \\mcp is an unsupported request target form (§4.2: origin-form or absolute-form only, checked before the path rule, so 400 and not 404), answered with the head of the 400 {\"error\":\"unsupported request target form\"} reply and no body.",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "HEAD \\mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\nuser-agent: Go-http-client/1.1\r\n\r\n",
+  "upstream": null,
+  "out": "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: 43\r\n\r\n",
+  "notes": "Content-Length is the length the body would have had; no body bytes follow it. The same holds for 431 and every other §4.2 400 once the request line parsed as HEAD."
+}

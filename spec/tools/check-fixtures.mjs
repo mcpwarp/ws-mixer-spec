@@ -77,12 +77,15 @@ function validateNode(schema, instance, defs, errors, pathStr) {
   let ok = true;
 
   if (typeof instance === "string") {
-    if (schema.minLength !== undefined && instance.length < schema.minLength) {
-      errors.push(`${pathStr}: length ${instance.length} < minLength ${schema.minLength}`);
+    // JSON Schema counts a string's length in Unicode code points (WIRE.md §2.7 String limits),
+    // not UTF-16 units: a non-BMP character is 1, where String.length says 2.
+    const codePoints = [...instance].length;
+    if (schema.minLength !== undefined && codePoints < schema.minLength) {
+      errors.push(`${pathStr}: length ${codePoints} < minLength ${schema.minLength}`);
       ok = false;
     }
-    if (schema.maxLength !== undefined && instance.length > schema.maxLength) {
-      errors.push(`${pathStr}: length ${instance.length} > maxLength ${schema.maxLength}`);
+    if (schema.maxLength !== undefined && codePoints > schema.maxLength) {
+      errors.push(`${pathStr}: length ${codePoints} > maxLength ${schema.maxLength}`);
       ok = false;
     }
     if (schema.pattern !== undefined && !new RegExp(schema.pattern).test(instance)) {
@@ -364,6 +367,14 @@ for (const type of controlTypes) {
         controlSchemaInvalidCount++;
         perTypeInvalid.count++;
         continue;
+      }
+
+      // A file name like message_1024_code_points_… states the length of that field in code points.
+      const named = /^([a-z]+(?:_[a-z]+)*?)_(\d+)_code_points/.exec(path.basename(file, ".json"));
+      if (named) {
+        const value = isPlainObject(fixture.message) ? fixture.message[named[1]] : undefined;
+        const actual = typeof value === "string" ? [...value].length : undefined;
+        check(actual === Number(named[2]), `${rel}: file name says ${named[1]} has ${named[2]} code points, it has ${actual ?? "no string"}`);
       }
 
       const strictResult = validateOneOf(strictSchemaDoc, fixture.message);
@@ -751,12 +762,21 @@ for (const [op, cov] of Object.entries(envelopeCoverage)) {
 
 const BRIDGING_STATES = ["online", "disabled", "closing"];
 const BRIDGING_MODES = ["handler", "target"];
-const BRIDGING_BEHAVIOURS = ["echo", "throw", "hang"];
+const BRIDGING_BEHAVIOURS = ["echo", "throw", "hang", "status"];
 const BRIDGING_LIMIT_KEYS = ["maxRequestBodyBytes", "targetTimeoutMs"];
 const BRIDGING_MAX_HEAD_BYTES = 64 * 1024;
 const BRIDGING_DEFAULT_BODY_CAP = 4 * 1024 * 1024;
 // Fixture names without a trailing _<status>.
-const BRIDGING_NAMED_STATUS = { mcp_post_ok: 200, notification_passthrough: 200 };
+const BRIDGING_NAMED_STATUS = {
+  mcp_post_ok: 200,
+  notification_passthrough: 200,
+  target_utf8_query: 200,
+  target_lone_percent: 200,
+  target_fragment_dropped: 200,
+  target_fragment_dropped_absolute_form: 200,
+  target_allowed_set: 200,
+  head_mcp_400_headonly: 400,
+};
 const REASON_PHRASES = {
   200: "OK",
   202: "Accepted",
@@ -772,6 +792,7 @@ const REASON_PHRASES = {
 };
 // The {"error": ...} bodies the SDK itself writes (MCPWARP.md §4 status table).
 const SDK_ERROR_MESSAGES = {
+  400: ["unsupported request target form", "request cannot be represented as a web Request"],
   404: ["not_found"],
   413: ["request body too large"],
   431: ["request head too large"],
@@ -779,7 +800,7 @@ const SDK_ERROR_MESSAGES = {
   503: ["service disabled", "service closing"],
   504: ["local server timed out"],
 };
-const NO_APP_STATUSES = new Set([404, 413, 431, 503]);
+const NO_APP_STATUSES = new Set([400, 404, 413, 431, 503]);
 const HOP_BY_HOP = new Set(["connection", "keep-alive", "proxy-connection", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"]);
 const TOKEN_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
@@ -889,6 +910,43 @@ function requestPath(target) {
   return noAuthority.split(/[?#]/)[0];
 }
 
+// MCPWARP.md §4.2 Target row: origin-form or absolute-form http(s)://, anything else 400.
+const ABSOLUTE_FORM_RE = /^https?:\/\/[^/?#]*/i;
+function supportedTargetForm(target) {
+  return target.startsWith("/") || ABSOLUTE_FORM_RE.test(target);
+}
+
+// MCPWARP.md §4.3 allowed set: unreserved, sub-delims, ":" "@" "/" "?", "[" "]", and "%" (never touched).
+const TARGET_KEEP_RE = /^[A-Za-z0-9\-._~!$&'()*+,;=:@/?[\]%]$/;
+
+// The target the app receives (MCPWARP.md §4.3): the fragment cut at the first "#", absolute-form cut
+// to path + query as written, then every received byte outside the allowed set %XX-escaped, once,
+// in uppercase hex. Existing escapes and a lone "%" pass through unchanged.
+function forwardedTarget(target) {
+  let t = target.split("#")[0];
+  const authority = ABSOLUTE_FORM_RE.exec(t);
+  if (authority) {
+    t = t.slice(authority[0].length);
+    if (!t.startsWith("/")) t = `/${t}`;
+  }
+  let out = "";
+  for (const byte of Buffer.from(t, "utf8")) {
+    const ch = String.fromCharCode(byte);
+    out += byte < 0x80 && TARGET_KEEP_RE.test(ch) ? ch : `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+  }
+  return out;
+}
+
+// A forwarded header value (Host included) holding NUL, CR or LF, or a fetch-forbidden method (CONNECT,
+// TRACE, TRACK, case-insensitive), is one no web Request / HTTP client can carry: 400 "request cannot be
+// represented as a web Request" (MCPWARP.md §4.5), in both modes.
+const FORBIDDEN_METHOD_RE = /^(CONNECT|TRACE|TRACK)$/i;
+function representable(req) {
+  if (FORBIDDEN_METHOD_RE.test(req.method)) return false;
+  const values = [...req.get("host"), ...Object.values(forwardableHeaders(req))];
+  return values.every((v) => !/[\0\r\n]/.test(v));
+}
+
 function forwardableHeaders(req) {
   const connectionListed = new Set(req.get("connection").flatMap((v) => v.split(",").map((s) => s.trim().toLowerCase())));
   const out = {};
@@ -911,17 +969,22 @@ function sameJson(a, b) {
   return JSON.stringify(sort(a)) === JSON.stringify(sort(b));
 }
 
-// The status the MCPWARP.md §4 rules give, in precedence order:
-// 431 (head) > 404 (path) > 503 (disabled/closing) > 413 (body cap) > the app.
+// The status the MCPWARP.md §4 rules give, in precedence order: 431 (head size, the blank line
+// counted) > 400 (target form) > 404 (path) > 503 (disabled/closing) > 413 (body cap) > 400 (not
+// representable) > the app.
 function bridgingExpectedStatus(fx, req) {
   if (req.headBytes > BRIDGING_MAX_HEAD_BYTES) return { status: 431 };
+  if (!supportedTargetForm(req.target)) return { status: 400, message: "unsupported request target form" };
   if (requestPath(req.target) !== "/mcp") return { status: 404 };
   if (fx.sdkState !== "online") return { status: 503, message: fx.sdkState === "disabled" ? "service disabled" : "service closing" };
   const cap = fx.limits.maxRequestBodyBytes ?? BRIDGING_DEFAULT_BODY_CAP;
   if (req.body.length > cap) return { status: 413 };
+  if (!representable(req)) return { status: 400, message: "request cannot be represented as a web Request" };
   const behaviour = fx.handler ? fx.handler.behaviour : "echo";
   if (behaviour === "throw") return fx.mode === "handler" ? { status: 500 } : { error: 'behaviour "throw" is handler-only' };
   if (behaviour === "hang") return fx.mode === "target" ? { status: 504 } : { error: 'behaviour "hang" in handler mode has no SDK-generated response' };
+  // MCPWARP.md §4.5: an app status below 200 or above 599 becomes 500 "handler error".
+  if (behaviour === "status") return fx.handler.status < 200 || fx.handler.status > 599 ? { status: 500 } : { status: fx.handler.status };
   return { status: 200 };
 }
 
@@ -956,6 +1019,11 @@ for (const file of listJsonFiles(bridgingDir)) {
   check(fx.mode === "target" || !("targetTimeoutMs" in fx.limits), `${rel}: limits.targetTimeoutMs applies only to mode "target"`);
   if ("handler" in fx) {
     check(isPlainObject(fx.handler) && BRIDGING_BEHAVIOURS.includes(fx.handler.behaviour), `${rel}: handler.behaviour must be one of ${BRIDGING_BEHAVIOURS.join(", ")}`);
+    if (isPlainObject(fx.handler)) {
+      const isStatus = fx.handler.behaviour === "status";
+      check(Object.keys(fx.handler).every((k) => k === "behaviour" || (isStatus && k === "status")), `${rel}: handler has only "behaviour" (and "status" with behaviour "status")`);
+      check(!isStatus || (Number.isInteger(fx.handler.status) && fx.handler.status >= 100 && fx.handler.status <= 999), `${rel}: behaviour "status" needs a three-digit integer handler.status`);
+    }
   }
   if (typeof fx.in !== "string" || typeof fx.out !== "string") {
     check(false, `${rel}: "in" and "out" must be strings`);
@@ -1055,15 +1123,20 @@ for (const file of listJsonFiles(bridgingDir)) {
   } else {
     const up = fx.upstream;
     const host = req.get("host")[0];
-    const query = req.target.includes("?") ? req.target.slice(req.target.indexOf("?") + 1).split("#")[0] : "";
+    const target = forwardedTarget(req.target);
     let wantUrl;
     let wantHeaders = forwardableHeaders(req);
     if (fx.mode === "handler") {
-      wantUrl = `https://${host}${req.target}`;
+      wantUrl = `https://${host}${target}`;
     } else {
-      const u = new URL(fx.target);
-      for (const [k, v] of new URLSearchParams(query)) u.searchParams.append(k, v);
-      wantUrl = u.toString();
+      // Target mode (MCPWARP.md §4.6): the target URL's own query first, then the request's, joined
+      // with "&", both verbatim (no URLSearchParams-style rebuild). An empty target path is "/", which
+      // is what the local server receives (http://127.0.0.1:3000 + ?x=1 -> /?x=1).
+      let [base, ownQuery = ""] = fx.target.split("#")[0].split(/\?(.*)/s);
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/]*$/.test(base)) base += "/";
+      const reqQuery = target.includes("?") ? target.slice(target.indexOf("?") + 1) : "";
+      const query = [ownQuery, reqQuery].filter((q) => q !== "").join("&");
+      wantUrl = query === "" ? base : `${base}?${query}`;
       delete wantHeaders.host;
       wantHeaders = { ...wantHeaders, "accept-encoding": "identity", "x-forwarded-host": host, "x-forwarded-proto": "https" };
     }
@@ -1150,7 +1223,16 @@ function parseTunnelVocabulary(markdown) {
   return vocab;
 }
 
-function checkTunnelEvent(ev, where, vocab, dials, inBurst) {
+const TUNNEL_RETRY_CAUSES = ["dial", "lost", "register", "overloaded", "drain", "token-refresh"];
+const TUNNEL_PROVIDER_RESULTS = ["ok", "unavailable", "error"];
+// Edge messages that disconnect.flush_after may hold: app messages the SDK delivers after the close.
+const TUNNEL_FLUSHABLE = ["registered", "register_error", "app_error", "disabled", "enabled", "conflict"];
+const TUNNEL_FIXTURE_KEYS = new Set(["description", "config", "events", "expect", "expectDials", "runnerRequirement"]);
+// A runner without the capability skips the fixture with a note (tunnel/README.md).
+const TUNNEL_RUNNER_REQUIREMENTS = ["post-disconnect-delivery"];
+
+// nested: "burst" (configure / stop calls) or "flush" (disconnect.flush_after edge messages).
+function checkTunnelEvent(ev, where, vocab, dials, nested) {
   if (!isPlainObject(ev) || Object.keys(ev).length !== 1) {
     check(false, `${where}: an event is an object with exactly one key`);
     return;
@@ -1160,13 +1242,17 @@ function checkTunnelEvent(ev, where, vocab, dials, inBurst) {
     check(false, `${where}: unknown event "${name}" (tunnel/README.md Events: ${Object.keys(vocab).join(", ")})`);
     return;
   }
-  if (inBurst) check(name === "configure" || name === "stop", `${where}: a burst holds only configure / stop events, got "${name}"`);
+  if (nested === "burst") check(name === "configure" || name === "stop", `${where}: a burst holds only configure / stop events, got "${name}"`);
+  if (nested === "flush") {
+    check(TUNNEL_FLUSHABLE.includes(name), `${where}: flush_after holds only edge messages (${TUNNEL_FLUSHABLE.join(", ")}), got "${name}"`);
+    check(!isPlainObject(payload) || !("conn" in payload), `${where}.${name}: a flush_after message belongs to the disconnecting connection, no "conn"`);
+  }
   if (name === "burst") {
     if (!Array.isArray(payload) || payload.length === 0) {
       check(false, `${where}.burst: a non-empty array of events`);
       return;
     }
-    payload.forEach((b, j) => checkTunnelEvent(b, `${where}.burst[${j}]`, vocab, dials, true));
+    payload.forEach((b, j) => checkTunnelEvent(b, `${where}.burst[${j}]`, vocab, dials, "burst"));
     return;
   }
   if (!isPlainObject(payload)) {
@@ -1187,6 +1273,39 @@ function checkTunnelEvent(ev, where, vocab, dials, inBurst) {
     const s = payload.httpStatus;
     check(Number.isInteger(s) && s >= 200 && s <= 599, `${where}.${name}: httpStatus must be an HTTP status 200..599, got ${JSON.stringify(s)}`);
   }
+  if (name === "retry") {
+    check(TUNNEL_RETRY_CAUSES.includes(payload.cause), `${where}.retry: cause must be one of ${TUNNEL_RETRY_CAUSES.join(", ")}, got ${JSON.stringify(payload.cause)}`);
+    check(Number.isInteger(payload.delayMs) && payload.delayMs >= 0, `${where}.retry: delayMs must be a non-negative integer`);
+    if (payload.cause === "token-refresh") check(payload.delayMs === 0, `${where}.retry: the token-refresh redial is immediate, delayMs 0`);
+  }
+  if (name === "token_provider") {
+    check(TUNNEL_PROVIDER_RESULTS.includes(payload.result), `${where}.token_provider: result must be one of ${TUNNEL_PROVIDER_RESULTS.join(", ")}, got ${JSON.stringify(payload.result)}`);
+  }
+  if (name === "drain" && "retry_after_ms" in payload) {
+    check(Number.isInteger(payload.retry_after_ms) && payload.retry_after_ms >= 0, `${where}.drain: retry_after_ms must be a non-negative integer`);
+  }
+  if (name === "disabled" && "id" in payload) {
+    check(typeof payload.id === "string" && payload.id !== "", `${where}.disabled: id must be a non-empty string`);
+  }
+  if (name === "disconnect" && "flush_after" in payload) {
+    if (!Array.isArray(payload.flush_after) || payload.flush_after.length === 0) {
+      check(false, `${where}.disconnect: flush_after must be a non-empty array of edge messages`);
+    } else {
+      payload.flush_after.forEach((m, j) => checkTunnelEvent(m, `${where}.disconnect.flush_after[${j}]`, vocab, dials, "flush"));
+    }
+  }
+}
+
+// drain.retry_after_ms binds the replacement dial (WIRE.md §2.9): the next drain retry must allow at
+// least that long, and at most 2000 ms of jitter more.
+function checkDrainRetryAfter(events, rel) {
+  events.forEach((ev, i) => {
+    const hint = isPlainObject(ev) && isPlainObject(ev.drain) ? ev.drain.retry_after_ms : undefined;
+    if (!Number.isInteger(hint)) return;
+    const next = events.slice(i + 1).find((e) => isPlainObject(e) && isPlainObject(e.retry) && e.retry.cause === "drain");
+    check(next !== undefined, `${rel}#events[${i}]: a drain with retry_after_ms needs a later retry {cause: "drain"}`);
+    if (next) check(next.retry.delayMs >= hint && next.retry.delayMs <= hint + 2000, `${rel}#events[${i}]: the drain retry after retry_after_ms ${hint} must allow ${hint}..${hint + 2000} ms, got delayMs ${next.retry.delayMs}`);
+  });
 }
 
 function collectConfigs(events, out) {
@@ -1221,8 +1340,15 @@ if (!fs.existsSync(tunnelDir)) {
     check(Array.isArray(fx.expect) && fx.expect.length > 0, `${rel}: expect must be a non-empty array of TunnelStatus snapshots`);
     if (!isPlainObject(fx.config) || !Array.isArray(fx.events) || !Array.isArray(fx.expect)) continue;
     if ("expectDials" in fx) check(Number.isInteger(fx.expectDials) && fx.expectDials >= 0, `${rel}: expectDials must be a non-negative integer`);
+    for (const k of Object.keys(fx)) check(TUNNEL_FIXTURE_KEYS.has(k), `${rel}: unknown top-level key "${k}" (tunnel/README.md: ${[...TUNNEL_FIXTURE_KEYS].join(", ")})`);
+    if ("runnerRequirement" in fx) {
+      check(TUNNEL_RUNNER_REQUIREMENTS.includes(fx.runnerRequirement), `${rel}: runnerRequirement must be one of ${TUNNEL_RUNNER_REQUIREMENTS.join(", ")}, got ${JSON.stringify(fx.runnerRequirement)}`);
+    }
+    const flushes = fx.events.some((ev) => isPlainObject(ev) && isPlainObject(ev.disconnect) && "flush_after" in ev.disconnect);
+    check(flushes === (fx.runnerRequirement === "post-disconnect-delivery"), `${rel}: a fixture with disconnect.flush_after carries runnerRequirement "post-disconnect-delivery", and only such a fixture does`);
 
-    fx.events.forEach((ev, i) => checkTunnelEvent(ev, `${rel}#events[${i}]`, tunnelVocab, fx.expectDials, false));
+    fx.events.forEach((ev, i) => checkTunnelEvent(ev, `${rel}#events[${i}]`, tunnelVocab, fx.expectDials, null));
+    checkDrainRetryAfter(fx.events, rel);
     const subscribes = fx.events.filter((ev) => isPlainObject(ev) && "subscribe" in ev).length;
     let repeats = 0;
     fx.expect.forEach((snap, i) => {

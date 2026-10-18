@@ -1,0 +1,22 @@
+{
+  "description": "The handler returns a response with status 600, outside 200..599: the SDK answers 500 {\"error\":\"handler error\"} instead (with an error event), never a status line it cannot stand behind. MCPWARP.md §4.5: a handler or target status < 200 or >= 600 becomes 500.",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "status", "status": 600 },
+  "in": "POST /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nmcp-session-id: abc\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "https://notes-tester.mcpwarp.test/mcp",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "notes-tester.mcpwarp.test",
+      "mcp-session-id": "abc",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+  },
+  "out": "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: 25\r\n\r\n{\"error\":\"handler error\"}",
+  "notes": "Status 599 is in range and passes through. Where the runtime's response type cannot hold 600 at all (a fetch Response throws a RangeError), the runner's handler returns whatever response-like value the SDK accepts with status 600; if the SDK accepts none, the case is the handler-throws 500 of handler_throw_500 and is skipped with a note."
+}

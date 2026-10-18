@@ -315,6 +315,10 @@ same for the ws-mixer-rust session implementing `v0.6.1`; approved by Anatoly.
   drain reason. Changed: `MCPWARP.md` §2.5, §3.3, §5.4, §5.6, §5.9, §6.5–§6.8 (T7, T19, T23, T31, T40, T41, T43,
   new T45), §10.4, the six status-text locale files (`rules.json` `newInSpec`), §11 rows 1–2 and 15 and its
   not-deviations line. See [`MCPWARP.md`](./MCPWARP.md#67-transitions).
+  Note (`D-2026-10-15-05`): the rationale above does not hold for the deployed edge. It never sends
+  `drain{replaced}` and has no free-tier drain policy; its take-over is the per-name `conflict{taken_over}`
+  op, and a draining connection hands its names over silently, so the "two installs … forever" scenario does
+  not occur. The `drain{replaced}` rule stands as future-proofing.
 - **D-2026-10-14-05** — The status-text tables are normative data, shipped as JSON in
   `spec/fixtures/mcpwarp/status-text/` (`rules.json`, `cases.json`, one file per locale: `en`, `de`, `es`,
   `fr`, `ja`, `zh-CN`). An SDK ships them string-identical (it derives its own tables from the JSON; the
@@ -418,3 +422,111 @@ same for the ws-mixer-rust session implementing `v0.6.1`; approved by Anatoly.
   18–19, §12; `REPOS.md`; `tunnel/README.md` (`dial_failed.httpStatus`, drain `delayMs`); `check-fixtures.mjs`
   (`httpStatus` range; a `MALFORMED_ENVELOPE` fixture's `message_contains` must name the first defect);
   `COUNTS.json`. See [`MCPWARP.md`](./MCPWARP.md).
+  Note (`D-2026-10-15-05`): R4, R7 and R11 handle a `drain{replaced}` that the deployed edge never sends (its
+  take-over is the per-name `conflict{taken_over}` op); they stand as future-proofing. ws-mixer-go records its
+  side as `D-2026-10-14-01`…`-04` in its own `docs/DECISIONS.md`.
+
+## 2026-10-15
+
+Project owner's approvals. Anatoly approved accepting a token provider on the tunnel's `TunnelConfig.token`
+(`D-2026-10-15-03`) and an edge request header `X-Mcpwarp-Server-Id` for routing (defined in spec `v0.7.0`,
+not here), and confirmed multi-service connections as option (a) — a multi-service wire tier plus a
+multi-service controller profile — forthcoming as spec `v0.7.0`; nothing of it is in this release.
+`D-2026-10-15-01` collects the wire rulings asked for by the ws-mixer-python session; `-02` the request-bridging
+rulings from the Rust, Python and JS reviews of §4; `-03` the profile additions from the Python, Rust and JS
+sessions; `-04` the cross-language naming from all four SDK sessions; `-05` the deployed-edge facts reported by
+the mcpwarp-saas session (`apps/tunnel` at `f81cd76`). Ships as spec `v0.6.3`.
+
+- **D-2026-10-15-01** — Wire rulings from the Python SDK; each is now normative text. Reason: the ws-mixer-python
+  session found these points silent or untestable, and JS and Go had already diverged on them. Rulings:
+  a client's `drain{client_requested}` carries `last_stream_id` = its `highest_opened` and `deadline_ms` = the
+  grace it actually waits (`5000`); an `OPEN` after its own drain is `RESET(REFUSED_STREAM)`, never a
+  connection error (it can cross the drain; its id is above the `last_stream_id` sent), and the server SHOULD
+  stop opening; a received drain's old connection is retired at `deadline_ms + 1000` ms (`30000` absent), timed
+  from the replacement's `welcome`, or once it has no streams, survivors ended with `CANCEL`, then
+  `error{NO_ERROR}` + `1000` — ws-mixer-js's own `D-2026-10-12-04`, adopted here; `drain.retry_after_ms` binds:
+  wait at least that long before the replacement dial, up to 2000 ms jitter on top, `random(0, 2000)` when
+  absent; the `STREAM_LIMIT` → `ENHANCE_YOUR_CALM` escalation is a MAY (suggested 20 refusals in 10 s, counting
+  only OPENs above the declared cap); integer fields accept any integral JSON number (`1.0` is `1`), never a
+  boolean, and senders write plain integers; the control string limits count code points (JSON Schema
+  `maxLength`), senders SHOULD also stay within the byte count; a WINDOW is checked stale before its increment,
+  so an increment-0 WINDOW for a retired id is discarded and counted; an SDK's stream-reset API SHOULD reject
+  connection-only codes locally. From ws-mixer-js 0.11.1: a locally closed connection ignores every inbound
+  frame, and a dial scheduled before the close never reaches the socket factory. And the agent's own graceful
+  close carries no `errorCode`/`errorName` (`wsCode` `1000` only); Python's temporary-failure marker is
+  `ws_mixer.TokenUnavailableError`, matched over the `__cause__` chain (10 links, cycle-safe). Changed:
+  `WIRE.md` §2.3, §2.5, §2.7 (drain fields, integer and string-limit rules), §2.8, §2.9 (Client side of a drain,
+  Reconnect table), §2.10 items 12 and 14; `CLIENT-SDK.md` Disconnect reason shape, Provider failure;
+  `MCPWARP.md` §5.9, §11 rows 20–23, 30, 32–35, 40, 45; control fixtures (`hello` with `"v": 1.0` / `"v": true`,
+  non-BMP `error.message` at and over the limit). See [`WIRE.md`](./WIRE.md#29-sequences),
+  [`CLIENT-SDK.md`](./CLIENT-SDK.md).
+- **D-2026-10-15-02** — Request-bridging rulings (§4). The forwarded target is percent-encoded from the
+  received bytes exactly once: the allowed set (RFC 3986 unreserved, sub-delims, `:` `@` `/` `?`, and `[` `]`)
+  passes unescaped, `%` is never touched (existing escapes are never decoded, a lone `%` stays), everything
+  else is escaped with uppercase hex, the fragment is cut at the first `#` in origin-form and absolute-form
+  alike, an SDK MAY escape `'` as `%27` in the query wherever it hands the app a normalised URL object, and
+  target mode joins the target's own query and the request's verbatim with `&`. A handler or target status
+  `< 200` or `>= 600` → `500 handler error`; the head cap counts the terminating blank line;
+  `400 request cannot be represented as a web Request` applies in handler and target modes; `\mcp` is `400
+  unsupported request target form`, not `404`; after a `HEAD` request line every SDK-generated reply is
+  head-only, parse errors included; §4.4's fallback `503` applies only before the handle's first successful
+  registration; the content-encoding re-serve applies only when the client actually decoded. Informative: a
+  local target's `3xx` passes through verbatim. Reason: the Rust, Python and JS reviews of §4 found these
+  under-specified, and the SDKs produced different bytes (JS re-encoded UTF-8 queries, Go rewrote a lone `%`
+  and escaped `#`, JS answered `500` where Rust answered `400`). Changed: `MCPWARP.md` §4.2–§4.6 (§4.5 gains
+  the minimum unrepresentable set: `CONNECT`, `TRACE`, `TRACK`, a NUL byte in a header value), §10.3, §11
+  rows 24–27, 36, 38, 39 (38–39 marked fixed in ws-mixer-go v0.9.0), 43, new 47–48; bridging fixtures
+  `target_utf8_query`, `target_lone_percent`, `target_fragment_dropped`, `target_fragment_dropped_absolute_form`,
+  `target_allowed_set`, `target_unrepresentable_400`, `handler_connect_400`, `head_mcp_400_headonly`,
+  `mcp_handler_status_600_500`. See [`MCPWARP.md`](./MCPWARP.md#43-path-rule).
+- **D-2026-10-15-03** — Profile additions. `TunnelConfig.token` is a string or a provider, with the transport's
+  provider semantics: called per dial; one refresh retry on `401`/`4011` (`onRetry` `{attempt: 1, delayMs: 0,
+  reason: "token-refresh"}`); a marked temporary failure is a failed dial (`connecting`/`RETRYING`); an unmarked
+  one `error`/`DISCONNECTED_FATAL`; `4011` after the refresh `error`/`UNAUTHORIZED`; compared by identity for
+  idempotence. §6.2 check 4 becomes "neither a non-empty string nor a provider", logged
+  ``INVALID_CONFIG: `token` must be a string or a callable``. Identity means the same function object, for a
+  bound method the same receiver and function. `status` is the last snapshot delivered to listeners and MAY lag
+  a call in progress. The connector hook sits on `expose()`'s and the tunnel constructor's options, MAY also
+  sit on `configure()`. The never-echo rule covers `token`, `name` and `url`. §6.9 drops the dashboard warn
+  line; only the `CODE: ` prefix is fixed. `close()`/`dispose()` in `conflict` closes immediately and resolves
+  once the take-over close has completed. On acceptance (§2.7): every op from a superseded connection is ignored,
+  `error` included; `registered`, `disable`, `enable` delivered after their connection ended are ignored,
+  `conflict` and `error` still apply; a `disable` with an unknown id is held until a `registered` brings it,
+  never adopted. The drain replacement's `onRetry` `delayMs` includes `retry_after_ms`. Reason: the Python tunnel
+  review, the Rust actor-based controller and JS 0.11.1 each hit a point the profile left open; the token
+  provider brings the tunnel up to what `expose()` and the transport already accept (JS, Rust and Go adopt it:
+  §11 rows 31, 41, 44). Changed: `MCPWARP.md` §2.7, §5.2, §5.7, §5.9, §6.2, §6.4, §6.7 (T6, T38, new T46–T51),
+  §6.8, §6.9, §8, §10.4 (events `token_provider {result: ok|unavailable|error}`, `drain {reason?, conn?,
+  retry_after_ms?}`), §11 rows 28–29, 31, 41–42, 44, new 46, §12; tunnel fixtures
+  `38_token_provider_refresh_retry`, `39_token_provider_unavailable_retrying`, `40_token_provider_error_fatal`,
+  `41_drain_retry_after_honoured`, `42_disable_unknown_id_held`, `44_stale_disable_after_disconnect_ignored`,
+  `45_dispose_in_conflict_immediate`. See [`MCPWARP.md`](./MCPWARP.md#67-transitions).
+- **D-2026-10-15-04** — Cross-language naming. `CLIENT-SDK.md` gains an informative transport naming table keyed
+  by the JS names, with the Go (v0.8.0 surface, v0.9.0 names for `HTTPClient`, `OnReconnect`, `Superseded`,
+  `CloseImmediately`), Rust (`ws_mixer` 0.2.0, incl. `no_redial_on_drain` and `close_immediate`) and Python
+  (proposal) columns, `n/a` where an SDK has no such item. `MCPWARP.md` §9 gains the Python names, the handler
+  row (`async Request -> Response`; `asgi_handler(app)` adapts ASGI 3) and an informative ASGI mapping (§9.1).
+  `hello.meta.client` is one of `sdk-js`, `sdk-go`, `sdk-rust`, `sdk-python` (never `sdk-py`), `meta.version` at
+  most 100 bytes (the edge truncates); the integration id is one constant UUID per integration product, never
+  generated per install or device, and a per-install identity would get its own field. Reason: four SDKs now
+  implement the transport and the layer, and each session reported its names; the Python proposal said
+  `sdk-py`, which the spec never allowed. Changed: `CLIENT-SDK.md` (new table); `MCPWARP.md` §2.4, §3.1, §9,
+  §9.1, §12. See [`CLIENT-SDK.md`](./CLIENT-SDK.md#transport-naming-across-sdks),
+  [`MCPWARP.md`](./MCPWARP.md#9-naming-tier-2).
+- **D-2026-10-15-05** — Deployed-edge facts, recorded as corrections. The edge never sends `drain{replaced}`
+  and has no free-tier drain policy: its only drain is ws-mixer's own (`rollout`, on shutdown or a per-pod
+  control call), and a draining connection hands its names over silently. Take-over is per name: the losing
+  connection gets `{v, op: "conflict", id, name, reason: "taken_over"}` (`taken_over` is the only reason) and
+  keeps its other names. `disable` is `{v, op, id, reason}` with no name (key by id), `enable` is
+  `{v, op, id, name}` (key by name or id); both fan out to every connection of the owner. `CONNECTION_LIMIT` is
+  an `error` op followed by `APPLICATION_CLOSE`, WS close `4014` with a reason starting `CONNECTION_LIMIT:`
+  (`4009` was the old code), at 10 connections per owner **per pod**. `TOO_MANY_SERVICES` is a whole-frame
+  `error` op (cap 100) with no `registered` reply. The `drain{replaced}` rules (`D-2026-10-14-04`, `-07` R4, R7,
+  R11) stand as future-proofing; their rationale is corrected by a note on each, not rewritten. Reason: the
+  mcpwarp-saas session read the tunnel's code (`apps/tunnel/internal/agentconn/agentconn.go`, mcpwarp-saas
+  `f81cd76`) and found the spec describing an edge policy that was never implemented. Cross-reference:
+  ws-mixer-go `D-2026-10-14-01`…`-04` (its `docs/DECISIONS.md`), the Go side of the same rulings (ws-mixer-go
+  v0.9.0). Changed: `WIRE.md` §2.8 (`CONNECTION_LIMIT` example), §2.9 (the two free-tier passages marked
+  historical); `MCPWARP.md` §2.6, §2.7 (edge op shapes), §3.3, §11 row 37 (Go's take-over close); notes on `D-2026-10-14-04` and `-07`; tunnel
+  fixture `43_too_many_services_error_op`. See [`MCPWARP.md`](./MCPWARP.md#33-conflict-and-take-over),
+  [`WIRE.md`](./WIRE.md#29-sequences).

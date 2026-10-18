@@ -1,0 +1,22 @@
+{
+  "description": "Token provider failure marked temporary (MCPWARP.md §5.2; CLIENT-SDK.md Provider failure row): the provider fails with the SDK's token-unavailable marker, so the dial attempt ends before the socket factory (no dial counted) and is a failed dial: connecting + RETRYING with the dial lastError, normal backoff (T27). A second unavailable result keeps RETRYING (no snapshot); then the provider returns the token and the redial goes online.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "token_provider": { "result": "unavailable" } },
+    { "configure": {} },
+    { "token_provider": { "result": "unavailable" } },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "token_provider": { "result": "ok" } },
+    { "retry": { "delayMs": 60000, "cause": "dial" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "connecting", "code": "RETRYING", "lastError": "Can't reach mcpwarp; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 1
+}

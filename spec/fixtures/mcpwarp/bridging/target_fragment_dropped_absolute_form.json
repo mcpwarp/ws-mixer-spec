@@ -1,0 +1,21 @@
+{
+  "description": "Absolute-form target with a fragment (MCPWARP.md §4.2 Target row, §4.3): `http://notes-tester.mcpwarp.test/mcp?a=1#x` is cut at the first `#`, then to its path + query as written, so the handler sees `https://<Host>/mcp?a=1`: the URL is built from the Host header, not the target's own scheme and authority, and the fragment is gone. Companion of target_fragment_dropped (origin-form).",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST http://notes-tester.mcpwarp.test/mcp?a=1#x HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "https://notes-tester.mcpwarp.test/mcp?a=1",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "content-type": "application/json",
+      "host": "notes-tester.mcpwarp.test",
+      "user-agent": "Go-http-client/1.1"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+  },
+  "out": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n28\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\r\n0\r\n\r\n",
+  "notes": "The fragment is cut before any URL construction, so a runtime URL parser never sees it."
+}

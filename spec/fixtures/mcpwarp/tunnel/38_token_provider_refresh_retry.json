@@ -1,0 +1,31 @@
+{
+  "description": "Token provider (MCPWARP.md §5.2, §6.2 check 4; CLIENT-SDK.md Rejected token row): the token is a provider, called per dial. A close 4011 before welcome is not fatal the first time: the SDK calls the provider once more and redials at once, onRetry {attempt 1, delayMs 0, reason \"token-refresh\"}; as a pre-welcome failure it is connecting + RETRYING (T27), and the refreshed dial goes online. After stop() a new configure() starts a new transport with a fresh refresh budget: an observable 401 on the upgrade gets the same one refresh, and a second rejection is error/UNAUTHORIZED.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "token_provider": { "result": "ok" } },
+    { "configure": {} },
+    { "connected": {} },
+    { "disconnect": { "fatal": false, "code": "UNAUTHORIZED", "wsCode": 4011 } },
+    { "retry": { "delayMs": 0, "cause": "token-refresh" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "stop": {} },
+    { "configure": {} },
+    { "dial_failed": { "httpStatus": 401 } },
+    { "retry": { "delayMs": 0, "cause": "token-refresh" } },
+    { "dial_failed": { "httpStatus": 401 } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "connecting", "code": "RETRYING", "lastError": "Can't reach mcpwarp; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "connecting", "code": "RETRYING", "lastError": "Can't reach mcpwarp; retrying." },
+    { "state": "error", "code": "UNAUTHORIZED", "lastError": "The token was rejected." }
+  ],
+  "expectDials": 4
+}

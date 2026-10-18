@@ -9,7 +9,7 @@ document is a layer above it, not part of it ([`D-2026-10-14-01`](./DECISIONS.md
 
 Written to the **intended ws-mixer-js 0.11.0 behaviour**. Every point where ws-mixer-js HEAD (`d45d3b4`,
 `SDK_VERSION` `"0.10.1"`) behaves differently is listed in §11; ws-mixer-js 0.11.0 implements v0.6.1; §11
-rows 18–19 are pending in 0.11.x. `d45d3b4` is the HEAD reviewed for v0.6.0; rows 18–19 were found later
+rows 18–19 are pending in 0.11.x. Rows 20 onward (v0.6.3) list deviations of every SDK, each row naming it. `d45d3b4` is the HEAD reviewed for v0.6.0; rows 18–19 were found later
 against `467bd5f` (ws-mixer-js 0.11.0), which is their baseline.
 
 Section numbering is frozen once released: never renumber, append. Durations are integer ms and end in
@@ -120,6 +120,11 @@ the byte comparison is made only against fixtures (§10.2), and a receiver MUST 
 | `INTEGRATION_ID_RE` | `^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\|00000000-0000-0000-0000-000000000000\|ffffffff-ffff-ffff-ffff-ffffffffffff)$`, tested after lowercasing |
 | `DEFAULT_URL` | `"wss://connect.mcpwarp.io"` |
 
+The integration id identifies the integration **product**: one constant UUID per product, assigned to it and
+shipped with it (e.g. built into mcpwarp desktop), the same on every install and device. An SDK or host MUST
+NOT generate it per install, per device or per run. A per-install identity, if one is ever needed, gets its own
+named field; it never reuses `hello.meta.integration` / `X-Mcpwarp-Integration` (§3.1).
+
 ### 2.5 `registered.errors[].code`
 
 Each value equals its name. **T** = transient (`TRANSIENT_REGISTER_ERRORS`): retried on the same connection
@@ -147,8 +152,8 @@ unknown code means the edge speaks something newer, so the controller MUST NOT w
 |---|---|---|
 | `UNSUPPORTED_VERSION` | `v` not supported | **fatal** |
 | `OVERLOADED` | too many `app` messages in flight (> 256) | if a `register` or `unregister` is outstanding: after **1000 ms**, if still connected, re-send it once (`unregister` only while closing); `onRetry` fires for a `register` re-send (§5.9) |
-| `CONNECTION_LIMIT` | too many connections per owner and pod (> 10); the edge then closes with `APPLICATION_CLOSE` 4014 | non-fatal `error` event |
-| `TOO_MANY_SERVICES` | too many entries in `services[]`; an edge MAY send it for any message with more than one (§2.1); the deployed edge's threshold is currently > 100 | non-fatal `error` event |
+| `CONNECTION_LIMIT` | too many connections per owner and pod (> 10, counted per pod, not cluster-wide); the edge then closes with `APPLICATION_CLOSE`, WS close **4014** with a reason starting `CONNECTION_LIMIT:` (never `4009`, WIRE.md §2.8) | non-fatal `error` event |
+| `TOO_MANY_SERVICES` | too many entries in `services[]`: a **whole-frame** error — the edge rejects the entire `register` and sends no `registered` reply, not a per-service `errors[]` entry. An edge MAY send it for any message with more than one entry (§2.1); the deployed edge's cap is 100 entries (sent above it) | non-fatal `error` event |
 | `UNKNOWN_OP` | unknown `op` | non-fatal `error` event |
 | `BAD_REQUEST` | malformed envelope | non-fatal `error` event |
 | any unknown code | — | non-fatal `error` event |
@@ -161,14 +166,27 @@ Agent states (§5.5): `connecting`, `registering`, `registered`, `disabled`, `co
 |---|---|---|---|
 | `registered` | any except `closing`, `closed`, `conflict` | `services[]` / `errors[]` entry whose `name` equals the agent's | `services` entry → state `registered`, url/id/created updated, backoff counter reset; `errors` entry → §2.5 |
 | `unregistered` | `closing`, while an `unregister` is outstanding | any `unregistered`, or one naming the agent's service | ends the close wait (§5.7) |
-| `disable` | any except `closing`, `closed`, `conflict` | `id` equals the agent's server id, or no server id known yet | state `disabled`, adopt `id`, `disabled` event |
-| `enable` | any except `closing`, `closed`, `conflict` | `name` equals the agent's; `id` not compared, then adopted | `enabled` event, state `registering`, `register` sent (if disconnected, the next `welcome` sends it) |
+| `disable` | any except `closing`, `closed`, `conflict` | `id` equals the agent's server id; an unknown `id` is **held** (below) | state `disabled`, `disabled` event |
+| `enable` | any except `closing`, `closed`, `conflict` | `name` equals the agent's, or `id` equals the agent's server id; `id` then adopted | `enabled` event, state `registering`, `register` sent (if disconnected, the next `welcome` sends it) |
 | `conflict` | any except `closing`, `closed`; once per agent lifetime | `name` equals the agent's **or** `id` equals the agent's server id | §3.3 |
 | `error` | any while connected | — | §2.6 |
 
-A `registered`, `disable`, `enable` or `conflict` arriving on a superseded connection — a drained connection
-once its replacement has received `welcome` (§5.9) — is ignored in every state: no state change, no event, no
-`register` sent, so the tunnel controller never sees it (§6.8 Drain, T38).
+| Rule | Detail |
+|---|---|
+| Superseded connection | **Every** mcpwarp op arriving on a superseded connection — a drained connection once its replacement has received `welcome` (§5.9) — is ignored in every state, `error` ops included: no state change, no event, no `register` sent, so the tunnel controller never sees it (§6.8 Drain, T38). |
+| Ended connection | A `registered`, `disable` or `enable` received on a connection that has since ended — queued `app` messages delivered after the disconnect ([CLIENT-SDK.md](./CLIENT-SDK.md)'s Handler delivery row) — MUST be ignored. `conflict` and `error` from that connection are still applied: `conflict` is sticky and an `error` code may be fatal. A superseded connection's ops stay ignored (row above, T38), its `conflict` and `error` included. Tunnel fixture `44_stale_disable_after_disconnect_ignored` assumes exactly this ordering: ops the connection received before it ended, delivered to the layer after the disconnect notification (§10.4 `flush_after`); a runner that cannot force post-disconnect delivery MUST skip 44 with a note in its run output; the fixture carries `runnerRequirement` `"post-disconnect-delivery"` (`spec/fixtures/mcpwarp/tunnel/README.md`). |
+| Unknown `disable` id | A `disable` whose `id` the handle does not know — including one before any `registered` — is **held**, not adopted: the edge fans `disable` out to every connection of the owner, so an unknown id may belong to another service. When a later `registered` brings that id, the held `disable` applies (state `disabled`, `disabled` event); a held id that never arrives changes nothing. Tunnel fixture `42_disable_unknown_id_held`. |
+
+**Op shapes the deployed edge sends** (informative; the schema stays as §2.3):
+
+| Op | Shape | Key |
+|---|---|---|
+| `conflict` | `{v, op, id, name, reason: "taken_over"}` — `name` always present; `taken_over` is the only `reason` value today | `name` or `id` |
+| `disable` | `{v, op, id, reason}` — no `name`; `reason` is `"disabled"` | `id` only |
+| `enable` | `{v, op, id, name}` — no `reason`; `name` is there for an agent whose `register` was refused `SERVER_DISABLED` and so never learned the `id` | `name` or `id` |
+| `error{TOO_MANY_SERVICES}` | whole-frame `error` op, cap 100 entries; no `registered` reply (§2.6) | — |
+
+This version keeps exactly one service per message (§2.1).
 
 ### 2.8 Decode rules
 
@@ -209,8 +227,8 @@ Edge side: an edge receiving `v !== 1` MUST answer `error{UNSUPPORTED_VERSION}`;
 | Item | Rule |
 |---|---|
 | Credential | `hello.token` is the authority (WIRE.md §2.1, [`D-2026-10-13-01`](./DECISIONS.md#2026-10-13)). `Authorization: Bearer <token>` on the upgrade is OPTIONAL; agents SHOULD send it when the runtime can set headers. A token provider MUST be called on every dial ([CLIENT-SDK.md](./CLIENT-SDK.md)'s Token provider row). |
-| Integration id | `hello.meta.integration` MUST carry the integration's RFC 4122 UUID in text form, **lowercased**, matching `INTEGRATION_ID_RE`. Agents SHOULD also send it as `X-Mcpwarp-Integration: <uuid>` when headers are possible; the two MUST be equal. An edge ignores a value that is not a valid UUID (no error). |
-| `hello.meta` | `{client, version, os, integration}`: `client` is `"sdk-<lang>"` — `"sdk-js"`, `"sdk-go"`, `"sdk-rust"`, `"sdk-python"`; `version` is the version of the mcpwarp layer's own package (JS: `SDK_VERSION`, since the layer ships inside `@mcpwarp/ws-mixer`; Rust: the `ws-mixer-mcpwarp` crate's version); `os` as in `hello.agent.os`. `hello.agent` stays the transport's (row below). |
+| Integration id | `hello.meta.integration` MUST carry the integration product's RFC 4122 UUID (§2.4: one constant per product, never per install or device) in text form, **lowercased**, matching `INTEGRATION_ID_RE`. Agents SHOULD also send it as `X-Mcpwarp-Integration: <uuid>` when headers are possible; the two MUST be equal. An edge ignores a value that is not a valid UUID (no error). |
+| `hello.meta` | `{client, version, os, integration}`: `client` is `"sdk-<lang>"` — `"sdk-js"`, `"sdk-go"`, `"sdk-rust"`, `"sdk-python"`; `version` is the version of the mcpwarp layer's own package (JS: `SDK_VERSION`, since the layer ships inside `@mcpwarp/ws-mixer`; Rust: the `ws-mixer-mcpwarp` crate's version), at most **100 bytes** (the edge truncates longer values); `os` as in `hello.agent.os`. The `client` set is exactly `sdk-js`, `sdk-go`, `sdk-rust`, `sdk-python` (not `sdk-py`); the edge keeps no allowlist and uses it only for logs and storage. `hello.agent` stays the transport's (row below). |
 | `hello.agent` | `{sdk, sdk_version, runtime, os}` per WIRE.md §2.7; `runtime`/`os` overridable by the `agent` option (each `^[\x20-\x7e]{1,64}$`); `sdk`/`sdk_version` never. |
 | `User-Agent` | `<sdk>/<sdk_version> (<runtime> <os>)`, e.g. `ws-mixer-js/0.10.1 (node/22.4.0 darwin/arm64)`, when headers are possible. |
 | Subprotocol | `ws-mixer.v1`. |
@@ -243,13 +261,14 @@ A header-less runtime (browser `WebSocket`, Electron renderer, Zotero) loses `Au
 | Before first registration | `expose()` rejects with `TAKEN_OVER` (§5.4); no handle, no `conflict` event. |
 | Last values | `url`, server id and registration keep their last values (now the new holder's). |
 
-Take-over is last-`register`-wins plus `conflict`, as above. An edge MAY instead drain the old holder's
-connection with `reason:"replaced"` as a deployment policy (WIRE.md describes mcpwarp doing so for free-tier
-users: [§2.9 `Conn.Drain`](./WIRE.md#29-sequences) and its "Connection replacement is not ws-mixer's
-business" note); this document does not require an edge to use that policy, but every agent MUST handle such
-a `drain` as a take-over (Drain `replaced` row above; §5.4, §5.6, §6.7 T45), never as a hand-over: an agent that
-re-registered on the replacement's `welcome` would take the name back, and two installs of the same name would
-take it from each other forever.
+Take-over is last-`register`-wins plus `conflict`, as above, and it is **per name**: the losing connection
+loses only that name and receives `conflict{reason:"taken_over"}` for it. The deployed edge never sends
+`drain{replaced}`: its only drain is ws-mixer's own (`rollout` on shutdown or a per-pod control call), never
+caused by a conflict, and a draining connection hands its names over silently — no `conflict`, no stream
+reset ([`D-2026-10-15-05`](./DECISIONS.md#2026-10-15)). The Drain `replaced` row stays as future-proofing: an
+edge MAY drain an old holder with `reason:"replaced"` as a deployment policy, and every agent MUST handle such a
+`drain` as a take-over (§5.4, §5.6, §6.7 T45), never as a hand-over — an agent that re-registered on the
+replacement's `welcome` would take the name back. An agent that never sees one loses nothing.
 
 ```mermaid
 sequenceDiagram
@@ -317,10 +336,10 @@ Lines end `\r\n`. Header order and casing on the request side vary; parsing is o
 
 | Limit | Value | On violation |
 |---|---|---|
-| Request head | **65 536** bytes (`64 KiB`) | `431` `"request head too large"` |
+| Request head | **65 536** bytes (`64 KiB`), counting the request line, every header line and the terminating blank line (`\r\n\r\n` included) | `431` `"request head too large"` |
 | Head deadline | **10 000 ms** from stream open | RESET `CANCEL` `"request head deadline exceeded"`, no response |
 | Request line | `^([^ ]+) ([^ ]+) HTTP/1\.([01])$`, method an RFC 9110 token | `400` `"malformed request line"` |
-| Target | origin-form as-is; absolute-form `http(s)://…` cut to path + query (fragment dropped, not normalised); `*` and authority-form | `400` `"unsupported request target form"` |
+| Target | origin-form (starts with `/`) and absolute-form `http(s)://…` (cut to path + query) only, fragment dropped in both, then encoded per §4.3; anything else — `*`, authority-form, `\mcp` — is refused | `400` `"unsupported request target form"` |
 | `Host` | exactly one, non-empty | `400` `"missing or duplicate Host header"` |
 | Framing | `Transfer-Encoding` + `Content-Length` together; TE other than exactly `chunked`; differing CL values | `400` `"both Transfer-Encoding and Content-Length"` / `"unsupported Transfer-Encoding"` / `"conflicting Content-Length values"` |
 | Chunk-size line | ≤ 4096 bytes; extensions ignored; trailers read and dropped | `400` `"line too long"` / `"malformed chunk size"` |
@@ -356,7 +375,21 @@ Only `/mcp` is forwarded. `requestPath(target)`: strip `scheme://authority` if p
 | Target | Forwarded |
 |---|:--:|
 | `/mcp`, `/mcp?x=1`, `https://h.example/mcp?x=1` | ✔ |
-| `/mcp/`, `/MCP`, `/`, `/healthz`, `/a/../mcp`, `\mcp` | — (`404`) |
+| `/mcp/`, `/MCP`, `/`, `/healthz`, `/a/../mcp` | — (`404`) |
+| `\mcp`, `*`, `h.example:443` | — (`400` `"unsupported request target form"`: §4.4 row 1 precedes the path check) |
+
+**Forwarded target.** The target the application receives (the handler's request URL, the target-mode URL) is
+built from the received request-line bytes:
+
+| Rule | Detail |
+|---|---|
+| Encode once | Percent-encoded from the received bytes **exactly once**, never re-encoded: raw UTF-8 `?q=café` → `?q=caf%C3%A9`, never `caf%C3%83%C2%A9` (`bridging/target_utf8_query`). |
+| Allowed set | Passed through unescaped: RFC 3986 unreserved (`ALPHA DIGIT - . _ ~`), sub-delims (`! $ & ' ( ) * + , ; =`), `:` `@` `/` `?`, and `[` `]` (kept for WHATWG/JS parity and PHP-style `a[]=1` queries) (`bridging/target_allowed_set`). |
+| `%` | Never touched: an existing escape is never decoded (`%41` stays `%41`), and a lone `%` not followed by two hex digits is kept as is, not rewritten to `%25` (`bridging/target_lone_percent`). |
+| Everything else | `%XX`-escaped with **uppercase** hex (RFC 3986 §2.1): space, `"`, `<`, `>`, `\`, `^`, `` ` ``, `{`, `\|`, `}`, non-ASCII bytes, controls. |
+| Fragment | The target is cut at the first `#` before any URL construction, in origin-form and absolute-form alike; the `#` and everything after it are dropped (`/mcp?a=1#x` → `/mcp?a=1`; `bridging/target_fragment_dropped`, `target_fragment_dropped_absolute_form`). |
+| Apostrophe | `'` is in the allowed set. In any mode where the SDK hands the app a WHATWG/RFC-normalised URL object (JS: target mode's `fetch`, handler mode's `request.url`), it MAY additionally escape `'` as `%27` in the **query**; the SDK's raw parsed target keeps `'`. `'` is not fixture-covered: only the exact path `/mcp` is forwarded, so it cannot go in the path, and `target_allowed_set` leaves it out of the query; the MAY-escape allowance stands. |
+| Target mode query | The target URL's own query comes first, then the request's query, joined with `&`, both copied verbatim (no re-encoding, no `URLSearchParams`-style rebuild). |
 
 ### 4.4 Precedence
 
@@ -370,12 +403,14 @@ Evaluated in this order; the first match answers. Rationale: never read a body t
 | 2 | path ≠ `/mcp` | `404` `{"error":"not_found"}` | discarded |
 | 3 | agent `disabled` | `503` `{"error":"service disabled"}` | discarded |
 | 3 | agent `closing` / `closed` | `503` `{"error":"service closing"}` | discarded |
-| 3 | agent unavailable in any other way (fallback) | `503` `{"error":"service unavailable"}` | discarded |
+| 3 | agent unavailable in any other way (fallback): the handle has **never** completed a successful registration | `503` `{"error":"service unavailable"}` | discarded |
 | 4 | body over the cap | `413` `{"error":"request body too large"}` | up to the cap (§4.2) |
 | 5 | body malformed | `400` (§4.2) | partly |
 | 6 | — | the application (handler or target) | whole |
 
-An agent MUST follow this order, so `404` beats `503` beats `413`. An edge MAY answer a disabled service's
+An agent MUST follow this order, so `404` beats `503` beats `413`. The fallback `503` applies only before the
+first successful registration on the handle; after it, `connecting` and `registering` — a reconnect, or a
+drain hand-over while the old connection still holds the route — keep serving (row 6). An edge MAY answer a disabled service's
 requests with `503` `{"error":"service disabled"}` itself.
 
 **Ending a refused stream.** After writing any refusal the SDK generates — `404`, `503`, `413` or `500` —
@@ -395,26 +430,43 @@ Error reply format (MUST, byte-exact):
 then `CLOSE`; to `HEAD` the same head and no body. `<reason>` is the RFC 9110 phrase — `413` is
 **`Content Too Large`**, `431` `Request Header Fields Too Large`, an unknown status `Unknown`.
 
+**`HEAD`.** Whenever the request line parsed with method `HEAD`, every reply the SDK generates is head-only,
+no body — the §4.2 head-parse errors (`400`, `431`) included, not only the §4.4 refusals
+(`bridging/head_mcp_400_headonly`).
+
 | Situation | Status | `error` message |
 |---|---|---|
 | §4.2 / §4.4 rows | as listed | as listed |
-| handler: request cannot be built | `400` | `request cannot be represented as a web Request` |
+| request cannot be built for the application (handler **and** target mode; set below) | `400` | `request cannot be represented as a web Request` (`bridging/target_unrepresentable_400`, `bridging/handler_connect_400`) |
 | handler throws, or returns something that is not a response | `500` | `handler error` (+ `error` event) |
+| handler or target returns a status `< 200` or `>= 600` | `500` | `handler error` (`bridging/mcp_handler_status_600_500`) |
 | unexpected failure before any byte written | `500` | `internal error` (after a write: RESET `INTERNAL_ERROR` `"internal error"`) |
 | target: no response headers within `targetTimeoutMs` (default **30 000**) | `504` | `local server timed out` |
 | target: connection failed | `502` | `local server unreachable (<cause code>)`, or `local server unreachable` without a code |
 | target: opaque / unpassable redirect | `502` | `local server sent a redirect this runtime cannot pass through` |
 
+**Unrepresentable requests.** An agent MUST answer the `400` above, in handler and target mode alike, at
+least for: the methods `CONNECT`, `TRACE` and `TRACK`, and any request with a header value containing a NUL
+byte (`0x00`). An SDK MAY refuse more requests the same way when its runtime's request type cannot carry them.
+Fixtures: `bridging/target_unrepresentable_400` (NUL in a header value, target mode) and
+`bridging/handler_connect_400` (`CONNECT`, handler mode).
+
 Target timeout: an agent MUST answer `504` at `targetTimeoutMs`; it SHOULD abort the upstream fetch when
 the runtime offers a cancel signal and MAY let it settle otherwise. `targetTimeoutMs` bounds only the wait for
 response headers; a body may stream past it.
+
+Redirects (informative): a `3xx` from a local target is passed through verbatim; the `502` redirect row
+applies only to an opaque redirect the HTTP client cannot surface (the redirect-not-followed settings involved:
+Go `ErrUseLastResponse`, Node `fetch` `redirect: "manual"`). A host-supplied handler that itself dispatches to a target service (e.g. a
+Rust `tower` service) returns an application response (§4.4 row 6); its `502`/`504` match these rows byte for
+byte only if passed through untouched.
 
 ### 4.6 Headers
 
 | Direction | Rule |
 |---|---|
 | Request → handler | URL `https://<Host><target>`; headers minus hop-by-hop, `Connection`-listed names, `expect`, `content-length`; no body for `GET`/`HEAD` or when unframed. |
-| Request → target URL | target URL with the incoming query parameters appended after its own; headers as for the handler minus `host`; set `accept-encoding: identity`, `x-forwarded-host: <public Host>`, `x-forwarded-proto: https`; redirects not followed. A response the runtime already decoded (`content-encoding` present) is re-served without `content-encoding`/`Content-Length`, chunked. |
+| Request → target URL | target URL with the request's query appended after its own (§4.3 Target mode query: joined with `&`, both verbatim); headers as for the handler minus `host`; set `accept-encoding: identity`, `x-forwarded-host: <public Host>`, `x-forwarded-proto: https`; redirects not followed. Only when the HTTP client actually decoded the response body (`content-encoding` was present and the client decoded it) is it re-served without `content-encoding`/`Content-Length`, chunked; a client that does not decode passes `content-encoding` and the bytes through unchanged. |
 | Response → edge | all headers except the hop-by-hop set (`connection`, `keep-alive`, `proxy-connection`, `proxy-authenticate`, `proxy-authorization`, `te`, `trailer`, `transfer-encoding`, `upgrade`), `Connection`-listed names and `content-length` (re-derived, §4.1); each `set-cookie` on its own line. |
 
 ### 4.7 MCP semantics belong to the handler
@@ -454,7 +506,8 @@ Language-specific adapters (JS `./node`'s `server`) MAY exist; they MUST follow 
 ### 5.2 Validation
 
 Synchronous, before anything is dialed (JS: a thrown `TypeError`, not a rejection). First failure wins. A
-message MUST NOT echo the offending value.
+message MUST NOT echo the value of `token`, `name` or `url`; other option values MAY appear (row 4's
+`got <n or type>`).
 
 | # | Check | JS message |
 |---|---|---|
@@ -466,7 +519,7 @@ message MUST NOT echo the offending value.
 | 6 | `integration` present | ``mcpwarp: `integration` (your integration's registration UUID) is required`` |
 | 7 | `integration` syntax | ``mcpwarp: `integration` must be an RFC 4122 UUID in text form; the server silently ignores anything else`` |
 | 8 | `kind` | ``mcpwarp: `kind` must be "http" or "stdio"`` |
-| 9 | `token` | ``mcpwarp: `token` is required`` |
+| 9 | `token`: a non-empty string or a provider | ``mcpwarp: `token` is required`` |
 | 10 | `agent` | ``mcpwarp: `agent` must be an object`` / ``mcpwarp: `agent.runtime` must be 1-64 printable ASCII characters`` (same for `agent.os`) |
 | 11 | `reconnect` fields (`stableAfter` finite ≥ 0, …) | validation error of the same kind as rows 1–10 |
 | 12 | `signal` already aborted | rejected result with `AbortError`; nothing dialed |
@@ -530,6 +583,10 @@ listener is dropped.
 ### 5.7 `close()`
 
 1. If already `closing`/`closed`, return the same result. Else state `closing`, timers cancelled.
+   From state `conflict`, `close()` (and the tunnel's `dispose()`) skips steps 2–3: the name is gone and the
+   take-over has already started closing the connection immediately (§6.8 Take-over close), so there is
+   nothing to unregister or drain. Its result waits for no `unregistered` and no drain grace, only for that
+   take-over close to complete (tunnel fixture `45_dispose_in_conflict_immediate`). The graceful steps below apply in every other state.
 2. If this connection sent `register` and is connected: `unregister`, wait for `unregistered` or 2000 ms (§3.2).
    Never rejects.
 3. Close the ws-mixer client gracefully; errors swallowed.
@@ -550,9 +607,10 @@ Abort before settle: the client is closed and `expose()` rejects with `signal.re
 | Welcome | every `welcome` (incl. a drain replacement) → `register` (§3.2), unless taken over (§3.3). |
 | Drain | `reason:"replaced"` → take-over (§3.3), as the tunnel's T45: `TAKEN_OVER` rejection before settle (§5.4), state `conflict` and the `conflict` event after (§5.6); either way no replacement dial, no reconnect, the client is closed immediately (§6.8 Take-over close). Any other reason → hand-over: the client dials a replacement, the drained connection keeps serving until it ends. |
 | Disconnect | Same rule as the tunnel's (§6.8 Drain, T38, T44). The end of a drained connection is ignored only once its replacement has received `welcome`, including while the replacement is still registering: the state does not change. Before that (replacement dial pending or failing) it is an ordinary lost connection: state `connecting`, the replacement's dial being the pending reconnect. Any other connection's end → `connecting`. Decide by connection identity, never by the handle's state; `conflict` stays `conflict` (§3.3). A non-fatal `disconnect` is emitted in every case. |
-| Superseded messages | Once the replacement has received `welcome`, `registered`, `disable`, `enable` and `conflict` arriving on the drained connection are ignored by the handle (§2.7): no state change, no event, no `register` sent, so the tunnel never sees them (§6.8 Drain, T38). |
+| Superseded messages | Once the replacement has received `welcome`, every mcpwarp op arriving on the drained connection — `registered`, `disable`, `enable`, `conflict` and `error` — is ignored by the handle (§2.7): no state change, no event, no `register` sent, so the tunnel never sees them (§6.8 Drain, T38). |
+| Ended connection | `registered`, `disable` and `enable` delivered after their connection ended are ignored; `conflict` and `error` still apply (§2.7 Ended connection). |
 | `onRetry` | MUST fire **before every** scheduled reconnect and every `register` retry — including zero-delay redials, drain-caused redials, the token-refresh redial and `OVERLOADED` re-sends — with `{attempt, delayMs, reason}`. `reason` is the transport's disconnect cause for a redial, `"register failed: <CODE>: <message>"` for a transient register retry, `"register failed: OVERLOADED: <message>"` for an `OVERLOADED` re-send. |
-| `onRetry` special cases | **`OVERLOADED` re-send**: `attempt` is `1` for the first re-send after the refusal and increments on each consecutive re-send; a successful `registered` resets it. **Drain replacement dial** (a hand-over, not a failure): `{attempt: 0, delayMs: <delay>, reason: "drain"}`, where `delayMs` is the actual delay before the replacement dial, whichever produced it: WIRE.md §2.9's `0–2000 ms` drain jitter, or the drain's `retry_after_ms` hint when the transport honours it; the client's own backoff counter is not consulted. **Token-refresh redial** (the one immediate redial after a rejected token, [CLIENT-SDK.md](./CLIENT-SDK.md)'s Rejected token row): it is a scheduled reconnect, so `onRetry` fires with exactly `{attempt: 1, delayMs: 0, reason: "token-refresh"}`. **Take-over**: `onRetry` does not fire for a replacement dial that `drain{replaced}` abandons (no retry is scheduled, §3.3). |
+| `onRetry` special cases | **`OVERLOADED` re-send**: `attempt` is `1` for the first re-send after the refusal and increments on each consecutive re-send; a successful `registered` resets it. **Drain replacement dial** (a hand-over, not a failure): `{attempt: 0, delayMs: <delay>, reason: "drain"}`, where `delayMs` is the actual delay before the replacement dial, whichever produced it: WIRE.md §2.9's `0–2000 ms` drain jitter, or the drain's `retry_after_ms` plus any jitter on top (WIRE.md §2.9 Client side of a drain; tunnel fixture `41_drain_retry_after_honoured`); the client's own backoff counter is not consulted. **Token-refresh redial** (the one immediate redial after a rejected token, [CLIENT-SDK.md](./CLIENT-SDK.md)'s Rejected token row): it is a scheduled reconnect, so `onRetry` fires with exactly `{attempt: 1, delayMs: 0, reason: "token-refresh"}`. **Take-over**: `onRetry` does not fire for a replacement dial that `drain{replaced}` abandons (no retry is scheduled, §3.3). |
 
 ---
 
@@ -570,8 +628,20 @@ everything else at start (§6.7 T7–T9). Initial status `{state: "off"}`.
 
 ### 6.2 `configure(config)`
 
-`config` = `{enabled: boolean, token: string, name: string, url?: string, kind?: ServiceKind, webSocket?}`;
+`config` = `{enabled: boolean, token: string | provider, name: string, url?: string, kind?: ServiceKind, webSocket?}`;
 `webSocket` overrides the options' factory. `configure()` MUST NOT throw or reject.
+
+**Token provider.** `token` MAY be a provider (a callable or provider object returning the token, sync or async
+per language), as for `expose()` (§5.1). Semantics are the transport's provider path
+([CLIENT-SDK.md](./CLIENT-SDK.md)'s Token provider, Rejected token and Provider failure rows):
+
+| Provider outcome | Result |
+|---|---|
+| called | on **every** dial, never cached across reconnects (tunnel event `token_provider{result:"ok"}`) |
+| upgrade `401` or close `4011` before `welcome` | a failed dial (as T27–T29 by state, T48); the provider is called once more and the dial retried at once; `onRetry` `{attempt: 1, delayMs: 0, reason: "token-refresh"}` (§5.9); tunnel fixture `38_token_provider_refresh_retry` |
+| `4011`/`401` again after that refresh retry | `error`/`UNAUTHORIZED` (T32) |
+| failure marked temporary (JS `TokenUnavailableError`, Go `ErrTokenUnavailable`, Rust `TokenError::Unavailable`, Python `ws_mixer.TokenUnavailableError`) | a failed dial: as T27–T29 by state, normal backoff, `onRetry` fires (T46); `token_provider{result:"unavailable"}`; tunnel fixture `39_token_provider_unavailable_retrying` |
+| unmarked failure | fatal: `error`/`DISCONNECTED_FATAL` (T47); `token_provider{result:"error"}`; tunnel fixture `40_token_provider_error_fatal` |
 
 1. Disposed → resolve, nothing else.
 2. Checks, first match wins:
@@ -581,16 +651,19 @@ everything else at start (§6.7 T7–T9). Initial status `{state: "off"}`.
 | 1 | not an object, or `null` | `error`/`INVALID_CONFIG` | `The tunnel settings are invalid.` | ``INVALID_CONFIG: the config must be an object`` |
 | 2 | `enabled` not a boolean | `error`/`INVALID_CONFIG` | `The tunnel settings are invalid.` | ``INVALID_CONFIG: `enabled` must be a boolean`` |
 | 3 | `!enabled`, or `token` a string that trims to `""` | valid → `off` | — | — |
-| 4 | `token` not a string | `error`/`INVALID_CONFIG` | `The token is not set.` | ``INVALID_CONFIG: `token` must be a string`` |
+| 4 | `token` neither a non-empty string nor a provider | `error`/`INVALID_CONFIG` | `The token is not set.` | ``INVALID_CONFIG: `token` must be a string or a callable`` (an SDK MAY say "provider" for its idiom; the `INVALID_CONFIG: ` prefix is what is fixed, §6.9) |
 | 5 | `name` not a string | `error`/`INVALID_CONFIG` | `The service name is not set.` | ``INVALID_CONFIG: `name` must be a string`` |
 | 6 | `url` present, not a string | `error`/`INVALID_CONFIG` | `The tunnel settings are invalid.` | ``INVALID_CONFIG: `url` must be a string`` |
 | 7 | `webSocket` present, not a function | `error`/`INVALID_CONFIG` | `The tunnel settings are invalid.` | ``INVALID_CONFIG: `webSocket` must be a function`` |
 
    On a failed check: the desired config is cleared, the live connection stopped.
    `name` syntax and `kind` are checked at start (§6.7 T7, T8).
-3. **Idempotence**: if a desired config exists and `enabled`, trimmed `token`, `name`, `url`, `kind` and the
-   effective factory (`config.webSocket ?? options.webSocket`, by identity) are all equal, return the
-   pending/previous result: no new dial, no new snapshot. Absent and `undefined` are equal. The desired
+3. **Idempotence**: if a desired config exists and `enabled`, `token` (trimmed when a string; a provider by
+   identity), `name`, `url`, `kind` and the effective factory (`config.webSocket ?? options.webSocket`, by
+   identity) are all equal, return the pending/previous result: no new dial, no new snapshot. Absent and
+   `undefined` are equal. **By identity** means the same function object; for a bound method (a language that
+   creates a new bound-method object on each access, e.g. Python), the same receiver and the same function
+   (Python `==` on bound methods is acceptable). The desired
    config is cleared by `stop()`, `dispose()`, a conflict, a fatal error and an invalid config — after which
    the same config starts again.
 4. Else it becomes the desired config. Applies are **serialized**: each waits for the previous one and for the
@@ -612,7 +685,7 @@ The result resolves once the previous connection is stopped and the new one has 
 | Rule | Detail |
 |---|---|
 | Shape | `TunnelStatus {state, url?, code?, lastError?}`. Absent keys are absent, never `undefined`/`null`. |
-| Snapshot | `status` returns a copy. |
+| Snapshot | `status` returns a copy of the **last snapshot delivered to listeners**. It MAY lag a call still being processed (e.g. `status` read synchronously right after `stop()` in an SDK that applies changes in an actor); the listener-delivered sequence is what fixtures compare. |
 | Dedup | A transition to an identical `(state, url, code, lastError)` delivers nothing. |
 | `subscribe(l)` | Calls `l` immediately with the current snapshot, then on every change; returns an unsubscribe function. |
 | Isolation | Listeners are called over a copy of the set; a throw is caught, logged `error` `status listener threw: <message>`, and the rest are still called. |
@@ -655,7 +728,7 @@ and has no `mcpwarp: ` prefix.
 | `FORBIDDEN` | `UNAUTHORIZED` | `The token is not allowed to publish this service.` |
 | invalid name (local or `INVALID_NAME` refusal) | `INVALID_NAME` | `The service name is invalid: use lowercase letters, digits and dashes (not at the start or end), at most 30 characters.` |
 | invalid settings | `INVALID_CONFIG` | `The tunnel settings are invalid.` |
-| `token` not a string | `INVALID_CONFIG` | `The token is not set.` |
+| `token` neither a non-empty string nor a provider | `INVALID_CONFIG` | `The token is not set.` |
 | `name` not a string | `INVALID_CONFIG` | `The service name is not set.` |
 | `USERNAME_REQUIRED` | `USERNAME_REQUIRED` | `Choose a username in your mcpwarp account first.` |
 | `QUOTA_EXCEEDED` | `QUOTA_EXCEEDED` | `Your mcpwarp account has no services left in its quota.` |
@@ -678,13 +751,13 @@ code takes its `lastError` from §6.6.
 | T3 | any | `configure`, new, `enabled` and token non-blank | `connecting` | — | previous connection stopped first; then start |
 | T4 | any | `configure`, new, `!enabled` or blank token | `off` | — | |
 | T5 | any | `stop()` | `off` | — | |
-| T6 | any | `dispose()` | `off` | — | final; nothing after |
+| T6 | any | `dispose()` | `off` | — | final; nothing after; from `conflict` nothing to unregister or drain, it waits only for the take-over close (§5.7) |
 | T7 | `connecting` | start: `name` fails `isValidServiceName` | `error` | `INVALID_NAME` | no dial |
 | T8 | `connecting` | start: any other option fails §5.2 (incl. `kind`, `reconnect.*`) | `error` | `INVALID_CONFIG` | `The tunnel settings are invalid.`; no dial |
 | T9 | `connecting` | start: any other synchronous failure | `error` | `INTERNAL` | |
 | T10 | `conn/*` | `connected`, `welcome` | unchanged | | `register` sent |
-| T11 | live | `registered` | `online` | — | `url` = registered url |
-| T12 | `conn/*`, `online`, `disabled` | `disabled`, or `register_error{SERVER_DISABLED}` | `disabled` | `DISABLED` | from `disabled`: no new snapshot (§6.4 dedup) |
+| T11 | live | `registered` | `online` | — | `url` = registered url; unless a held `disable` matches the new id (T50) |
+| T12 | `conn/*`, `online`, `disabled` | `disabled` for the agent's server id, or `register_error{SERVER_DISABLED}` | `disabled` | `DISABLED` | from `disabled`: no new snapshot (§6.4 dedup) |
 | T13 | live | `enabled` | `connecting` | — | `register` sent |
 | T14 | `conn/*` | `register_error{<transient>}` | `connecting` | `RETRYING` | register text; `onRetry` fires |
 | T15 | `conn/*` | `app_error{OVERLOADED}`, `register` outstanding | `connecting` | `RETRYING` | register text; `onRetry` `delayMs` 1000 |
@@ -704,13 +777,13 @@ code takes its `lastError` from §6.6.
 | T29 | `online`, `disabled` | `dial_failed` (no HTTP status observable, or one the reconnect rules retry), or a pre-`welcome` failure, of a drain replacement | unchanged | | `onRetry` fires; an observable `401`/`403`/`404` is T32/T33 |
 | T30 | live | `disconnect{fatal:false}` of a connection that received `welcome` | `connecting` | `DISCONNECTED` | reconnect pending |
 | T31 | `online`, `disabled` | `drain`, reason not `replaced` | unchanged | | replacement dialed; the drained connection keeps serving until it ends; its end changes nothing once the replacement has received `welcome` (T38), else T44 |
-| T32 | live | `disconnect{fatal:true, code:"UNAUTHORIZED"}`, or a refused upgrade with HTTP `401` when the status is observable (`dial_failed{httpStatus:401}`: `httpStatus` 401 in the disconnect reason, no `errorName`) | `error` | `UNAUTHORIZED` | `The token was rejected.`; an unobservable `401` is a plain failed dial (T27–T29 by state, §1 Upgrade-status mapping) |
+| T32 | live | `disconnect{fatal:true, code:"UNAUTHORIZED"}`, or a refused upgrade with HTTP `401` when the status is observable (`dial_failed{httpStatus:401}`: `httpStatus` 401 in the disconnect reason, no `errorName`) — before `welcome` only with a static token, or the provider's refresh already spent | `error` | `UNAUTHORIZED` | `The token was rejected.`; a pre-`welcome` rejection with an unspent provider refresh is T48; an unobservable `401` is a plain failed dial (T27–T29 by state, §1 Upgrade-status mapping) |
 | T33 | live | `disconnect{fatal:true}`, any other code; or `dial_failed{httpStatus:403 \| 404}` (observable) | `error` | `DISCONNECTED_FATAL` | incl. `reconnect.maxAttempts` exhausted |
 | T34 | live | `conflict` | `conflict` | `TAKEN_OVER` | desired config cleared; connection closed immediately; no redial (§6.8) |
 | T35 | `conflict`/`TAKEN_OVER` | any connection event | unchanged | | sticky until `configure` (T3) |
 | T36 | live | connection closed with no error, not by the controller | `error` | `INTERNAL` | |
 | T37 | `error`/* | `configure` identical to the failed one | `connecting` | — | T3: the desired config was cleared |
-| T38 | any | any event from a superseded connection (an ended generation, or a drained connection once its replacement has received `welcome`) — including its `disconnect` while the replacement is still registering, and its `registered`, `disabled`, `enabled`, `conflict` | unchanged | | §6.8; before the replacement's `welcome` the drained connection's end is T44 |
+| T38 | any | any event from a superseded connection (an ended generation, or a drained connection once its replacement has received `welcome`) — including its `disconnect` while the replacement is still registering, and its `registered`, `disabled`, `enabled`, `conflict`, `app_error` | unchanged | | §6.8; before the replacement's `welcome` the drained connection's end is T44 |
 | T39 | `conn/*`, before the first registration | `register_error{<unknown code>}` | `error` | `INTERNAL` | closed (`expose()` rejected) |
 | T40 | `conn/*`, after a registration | `register_error{<unknown code>}` | `error` | `INTERNAL` | closed; as T23 ([`D-2026-10-14-04`](./DECISIONS.md#2026-10-14)) |
 | T41 | `online`, `disabled` | `register_error{<unknown code>}` on a replacement | `error` | `INTERNAL` | closed; as T23 |
@@ -718,6 +791,12 @@ code takes its `lastError` from §6.6.
 | T43 | `conn/*` | `drain`, reason not `replaced` | unchanged | | as T31: replacement dialed, the drained connection keeps serving until it ends |
 | T44 | `conn/*`, `online`, `disabled` | `disconnect{fatal:false}` of a drained connection whose replacement has not received `welcome` (dial pending or failing, T29) | `connecting` | `DISCONNECTED` | as T30; the replacement's dial is the pending reconnect (T28) |
 | T45 | live | `drain` with `reason:"replaced"` | `conflict` | `TAKEN_OVER` | as T34 (§3.3 Drain `replaced`): desired config cleared; connection closed immediately; no redial, the replacement never registers (§6.8) |
+| T46 | T27's, T28's or T29's From | `token_provider{result:"unavailable"}` (a provider failure marked temporary) | as T27, T28, T29 by state | | a failed dial (§6.2 Token provider): dial `lastError`, normal backoff, `onRetry` fires |
+| T47 | live | `token_provider{result:"error"}` (an unmarked provider failure) | `error` | `DISCONNECTED_FATAL` | fatal ([CLIENT-SDK.md](./CLIENT-SDK.md)'s Fatal set row); no redial |
+| T48 | T27's, T28's or T29's From | `dial_failed{httpStatus:401}`, or a `disconnect` with `code:"UNAUTHORIZED"` before `welcome`, while `token` is a provider whose one refresh is unspent | as T27, T28, T29 by state | | a failed dial, not fatal: provider called again, immediate redial, `onRetry` `{attempt: 1, delayMs: 0, reason: "token-refresh"}`; a second rejection is T32 |
+| T49 | `conn/*`, `online`, `disabled` | `disabled` with an `id` the handle does not know (incl. before any `registered`) | unchanged | | held, never adopted (§2.7 Unknown `disable` id) |
+| T50 | `conn/*` | `registered` that brings a held `disable`'s `id` | `disabled` | `DISABLED` | the held `disable` applies with the registration: `disabled` directly, no `online` snapshot in between |
+| T51 | any | `registered`, `disabled` or `enabled` delivered after its connection ended | unchanged | | §2.7 Ended connection; that connection's `conflict` (T34) and `app_error` (T24–T26) still apply, unless the connection is superseded: then T38 wins and they are ignored too |
 
 Timer events (`retry`, `tick`) only advance the clock; any status change comes from what the timer then does
 (a redial, a re-sent `register`) and that row.
@@ -738,7 +817,7 @@ that had `connected` but no `welcome` (`34_t27_*`). A fatal one is T32/T33 as us
 | Rule | Detail |
 |---|---|
 | Generations | Every `configure` that applies, `stop`, `dispose`, conflict and fatal error ends the current connection's generation synchronously. Events, `onRetry` calls and `expose()` settlements of an ended generation MUST NOT change status. A handle that resolves for an ended generation is closed and never shown. |
-| Drain | Once the replacement has received `welcome`, the drained connection is superseded: its end MUST NOT change status, including while the replacement is still registering, and is logged `info` `the superseded connection ended: <message>`; only the replacement's events move status. Before that — the replacement's dial still pending or failing (T29) — the drained connection's end is a lost connection: `connecting`/`DISCONNECTED`, `lastError` per §6.6 (T44). Decide by connection identity, never by the handle's state. Application messages on the superseded connection — `registered`, `disable`, `enable`, `conflict` — arriving after the replacement's `welcome` are stale too: the handle already ignores them (§2.7, §5.9), so they never reach the controller; no status change, no `register` sent (T38). This rule is for a hand-over; a `drain` with `reason:"replaced"` is a take-over (T45). |
+| Drain | Once the replacement has received `welcome`, the drained connection is superseded: its end MUST NOT change status, including while the replacement is still registering, and is logged `info` `the superseded connection ended: <message>`; only the replacement's events move status. Before that — the replacement's dial still pending or failing (T29) — the drained connection's end is a lost connection: `connecting`/`DISCONNECTED`, `lastError` per §6.6 (T44). Decide by connection identity, never by the handle's state. Application messages on the superseded connection — `registered`, `disable`, `enable`, `conflict`, `error` — arriving after the replacement's `welcome` are stale too: the handle already ignores them (§2.7, §5.9), so they never reach the controller; no status change, no `register` sent (T38). This rule is for a hand-over; a `drain` with `reason:"replaced"` is a take-over (T45). |
 | Sticky conflict | After T34 or T45 nothing redials until the next `configure()`, identical or not. A `TAKEN_OVER` rejection of `expose()` is the same transition. |
 | Take-over close | On a `conflict` (T34) and on a `drain` with `reason:"replaced"` (T45) alike, the agent closes the taken-over connection **immediately**: no `unregister`, no wait for in-flight streams — they are cut, since `TAKEN_OVER` means another holder owns the name (§3.3 Sticky). On the wire: `error{NO_ERROR}` on stream 0, then WS close `1000`, with no `drain{client_requested}` and no grace (WIRE.md §2.10 item 14 is skipped); never `APPLICATION_CLOSE`. On a `drain{replaced}` a replacement dial that has not yet completed its upgrade is abandoned; one that has already sent `hello` is closed the same way (`error{NO_ERROR}` + WS close `1000`) before any `welcome` handling, is never reported as connected and never sends `register`, and the edge tolerates the `hello` followed by an immediate close. `onRetry` does not fire for the abandoned dial in either case (§3.3 Drain `replaced`). |
 | Fatal | Every `error` transition clears the desired config and closes the connection; no automatic redial. |
@@ -753,12 +832,15 @@ appear in logs (never in `lastError`, §6.6). Logger exceptions are swallowed.
 | Level | Messages |
 |---|---|
 | `info` | `connecting as "<name>"[ via <url>]`; `online at <url>`; `off`; `stopping`; `the service was enabled, registering again`; `the superseded connection ended: <message>` |
-| `warn` | `retry #<attempt> in <delayMs> ms: <reason>`; `disconnected: <message>`; non-fatal errors as `<CODE>: <message>` (handler errors: message only); `the service is disabled in the mcpwarp dashboard`; `the service was disabled (<reason>)`; `another connection took over the name "<name>"; not reconnecting until configure() is called again`; `error while closing: <message>`; `dispose() gave up waiting after <n> ms` |
+| `warn` | `retry #<attempt> in <delayMs> ms: <reason>`; `disconnected: <message>`; non-fatal errors as `<CODE>: <message>` (handler errors: message only); `the service was disabled (<reason>)` (for a `disable` op; a `SERVER_DISABLED` refusal adds no line of its own); `another connection took over the name "<name>"; not reconnecting until configure() is called again`; `error while closing: <message>`; `dispose() gave up waiting after <n> ms` |
 | `error` | every transition to `error`, as `<CODE>: <message>` — including `INVALID_CONFIG: <detail>` and `INVALID_NAME: <detail>` for local validation failures (§6.2, T7, T8); `status listener threw: <message>`; an internal queue failure |
 
 In every `<CODE>: <message>` line (`warn` and `error`), `<CODE>` is the failure's `McpwarpError` `code` (§5.4) when
 it carries one — e.g. `UNAUTHENTICATED`, `MALFORMED_ENVELOPE`, `TAKEN_OVER` — and otherwise the
 `TunnelStatusCode` of the resulting status (§6.5).
+
+Only the `<CODE>: ` prefix is fixed. Wording that names an option field is SDK-local, in the SDK's own spelling
+(e.g. Python's ``INVALID_CONFIG: `web_socket` must be callable``); the JS lines above are examples of it.
 
 ---
 
@@ -814,7 +896,7 @@ its sentence only (rule 6), which carries the name rule itself.
 
 | Requirement | Rule |
 |---|---|
-| Socket injection (runtime-specific) | A runtime with a WebSocket API (JS) MUST accept an injected WebSocket constructor or factory `(url, {protocols: ["ws-mixer.v1"], headers}) → WebSocketLike`, per `expose()` and per `configure()`; a factory MAY drop `headers`, §3.1 still holds. A native SDK (Go, Rust, Python) MUST expose an equivalent connector hook, at minimum the TLS configuration, at the same two places. |
+| Socket injection (runtime-specific) | A runtime with a WebSocket API (JS) MUST accept an injected WebSocket constructor or factory `(url, {protocols: ["ws-mixer.v1"], headers}) → WebSocketLike`; a factory MAY drop `headers`, §3.1 still holds. A native SDK (Go, Rust, Python) MUST expose an equivalent connector hook, at minimum the TLS configuration. Placement, for both: on `expose()`'s options and on the tunnel's constructor options (`createTunnel` / `TunnelOptions`). It need not be part of the per-`configure()` settings (`TunnelConfig` is plain, serializable data), but an SDK MAY also accept it there (JS does, as `configure({webSocket})`). |
 | Header-less runtimes | Identity MUST survive a factory that sends no headers: `hello.token` and `hello.meta.integration` carry it (§3.1). |
 | Optional globals | An agent MUST work without an abort-controller primitive, `DOMException`, `structuredClone` and `queueMicrotask` (JS names). Without a cancel primitive, edge cancellation is not propagated, and target mode still answers `504` on time (§4.5). |
 | Required globals (JS) | `setTimeout`/`clearTimeout`, `Promise`, `URL`, `TextEncoder`/`TextDecoder`; `Request`/`Response`/`Headers` for handler/target; `fetch` for target. Read at call time, never cached at import. |
@@ -839,16 +921,20 @@ Rust: snake_case, builder or `Config` struct, `async`. Python: snake_case, datac
 | `url`, `token`, `name`, `kind`, `integration` | `URL`, `Token`, `Name`, `Kind`, `Integration` | `url`, `token`, `name`, `kind`, `integration` | same as Rust |
 | `webSocket` | `WebSocket` (factory func) | `web_socket` | `web_socket` |
 | `agent {runtime, os}` | `Agent{Runtime, OS}` | `agent: Agent {runtime, os}` | `agent: Agent(runtime, os)` |
-| `reconnect` | `Reconnect ReconnectOptions` | `reconnect: ReconnectConfig` | `reconnect: ReconnectOptions` |
+| `reconnect` | `Reconnect ReconnectOptions` | `reconnect: ReconnectConfig` | `reconnect: ReconnectOptions(base_ms, cap_ms, connect_timeout_ms, max_attempts, stable_after_ms)` (`max_attempts`: `None` = unbounded, `0` = no reconnect) |
 | `maxRequestBodyBytes` | `MaxRequestBodyBytes` | `max_request_body_bytes` | `max_request_body_bytes` |
 | `signal` | `ctx` | dropping the future | task cancellation |
 | `onRetry({attempt, delayMs, reason})` | `OnRetry func(RetryInfo{Attempt, Delay, Reason})` | `on_retry: Fn(RetryInfo {attempt, delay, reason})` | `on_retry(RetryInfo(attempt, delay_ms, reason))` |
-| `handler` | `Handler http.Handler` | `handler` (`http::Request` → `http::Response` service) | `handler` (ASGI app) |
+| `handler` | `Handler http.Handler` | `handler` (`http::Request` → `http::Response` service) | `handler` (async `Request -> Response`; `asgi_handler(app)` adapts ASGI 3, §9.1) |
 | `target`, `targetTimeoutMs` | `Target`, `TargetTimeout time.Duration` | `target`, `target_timeout: Duration` | `target`, `target_timeout_ms` |
 | `ExposeHandle` | `*Handle` | `ExposeHandle` | `ExposeHandle` |
 | `.url`, `.serverId`, `.registration`, `.path`, `.state`, `.client` | `URL()`, `ServerID()`, `Registration()`, `Path()`, `State()`, `Client()` | `url()`, `server_id()`, `registration()`, `path()`, `state()`, `client()` | `.url`, `.server_id`, `.registration`, `.path`, `.state`, `.client` |
-| `.on` / `.once` / `.off` | `Events() <-chan Event` | `events() -> broadcast::Receiver<ExposeEvent>` | `on(event, cb)` / `once` / `off` |
+| `.on` / `.once` / `.off` | `Events() <-chan Event` | `events() -> broadcast::Receiver<ExposeEvent>` | `on(event, cb)` / `once(event, cb)`, each returning an unsubscribe callable; `off(event, cb)` |
 | events `registered` … `close` | `EventRegistered` … `EventClose` | `ExposeEvent::Registered` … `::Close` | `"registered"` … `"close"` |
+| handle states (`.state` values) | — | — | `ExposeState` (`StrEnum`) |
+| `disabled` payload `{serverId, reason}` | — | — | `Disabled(server_id, reason)` |
+| `enabled` payload `{serverId}` | — | — | `Enabled(server_id)` |
+| `close` payload `{}` / `{error}` | — | — | `Closed(error)` (`error` `None` after `close()`) |
 | `.close()` | `Close(ctx) error` | `close().await` | `await close()` |
 | `ExposeRegistration {url, serverId, created}` | `Registration{URL, ServerID, Created}` | `Registration {url, server_id, created}` | `Registration(url, server_id, created)` |
 | `ExposeConflict {serverId, name, reason}` | `Conflict{ServerID, Name, Reason}` | `Conflict {server_id, name, reason}` | `Conflict(server_id, name, reason)` |
@@ -872,6 +958,43 @@ Rust: snake_case, builder or `Config` struct, `async`. Python: snake_case, datac
 | `SERVICE_NAME_RE`, `SERVICE_NAME_MAX`, `isValidServiceName` | `ServiceNameRE`, `ServiceNameMax`, `IsValidServiceName` | `SERVICE_NAME_RE`, `SERVICE_NAME_MAX`, `is_valid_service_name` | `SERVICE_NAME_RE`, `SERVICE_NAME_MAX`, `is_valid_service_name` |
 | `encodeRegister`, `encodeUnregister`, `decodeEnvelope` | `EncodeRegister`, `EncodeUnregister`, `DecodeEnvelope` | `encode_register`, `encode_unregister`, `decode_envelope` | `encode_register`, `encode_unregister`, `decode_envelope` |
 | `webSocketFactory(ctor, {headers})` | n/a (JS realm helper) | n/a | n/a |
+| `INTEGRATION_ID_RE` | — | — | `INTEGRATION_ID_RE` |
+| `MCPWARP_V` | — | — | `MCPWARP_V` |
+| `RetryInfo {attempt, delayMs, reason}` | `RetryInfo{Attempt, Delay, Reason}` | `RetryInfo {attempt, delay, reason}` | `RetryInfo(attempt, delay_ms, reason)` |
+| `Agent {runtime, os}` | `Agent{Runtime, OS}` | `Agent {runtime, os}` | `Agent(runtime, os)` |
+| `TokenUnavailableError` (provider marker, [CLIENT-SDK.md](./CLIENT-SDK.md)'s Provider failure row) | `ErrTokenUnavailable` | `TokenError::Unavailable` | `ws_mixer.TokenUnavailableError` |
+
+— = not yet reported by that SDK. The transport-level names (client, streams, disconnect reason, stats) are in
+[CLIENT-SDK.md's naming table](./CLIENT-SDK.md#transport-naming-across-sdks).
+
+### 9.1 Python ASGI adapter (informative)
+
+`asgi_handler(app)` adapts an ASGI 3 application to the §5.1 `handler` shape. It runs after §4.4's
+precedence, so the body is already buffered and capped.
+
+| ASGI item | Value |
+|---|---|
+| Signature | `asgi_handler(app)`; no `root_path` argument |
+| scope `type` / `asgi` | `"http"` / `{"version": "3.0", "spec_version": "2.4"}` |
+| scope `http_version`, `method` | from the request line |
+| scope `scheme` | `"https"` |
+| scope `path` | `unquote(raw_path)` decoded as UTF-8; failure → `400` `request cannot be represented as a web Request` (§4.5) |
+| scope `raw_path`, `query_string` | the raw path bytes, the raw query bytes (§4.3 Forwarded target) |
+| scope `root_path` | always `""`: the public path is pinned to `/mcp`, and a prefix has no correct meaning |
+| scope `headers` | the §4.6 forwardable set, lowercased bytes, plus `host` |
+| scope `server`, `client` / `state` | `None` / `{}` |
+| `receive()` | one `http.request` with the whole buffered body, `more_body=False`; after that it returns `http.disconnect` once the response is complete, and on an edge reset or connection end |
+| `send("http.response.start")` | records status and headers; nothing is written until the first body message or the end |
+| `send("http.response.body", more_body=True)` | one chunk, flushed at once |
+| `send()` after a disconnect | raises `OSError` (ASGI 2.4) |
+| Completion | the response is complete when the app sends `more_body=False` **or** the declared `Content-Length` is reached; `CLOSE` is sent at that moment, and the app task is then awaited (background tasks run) until `stop()` cancels it |
+| Framing | `Content-Length` only when the app's headers declare it, else chunked; `HEAD`/`204`/`304` bodyless (§4.1) |
+| App raises or returns before `http.response.start` | `500` `handler error` + `error` event |
+| App raises after `http.response.start` | RESET `INTERNAL_ERROR` `"response body failed"` |
+| Body shorter than the declared length | RESET `INTERNAL_ERROR` (§4.1) |
+| Edge reset before completion, or `stop()` | `http.disconnect` is delivered, then the app task is cancelled |
+| Lifespan | not run; the host owns the app's lifespan |
+| `1xx` | dropped (§4.1) |
 
 ---
 
@@ -922,8 +1045,12 @@ One file per rule: `mcp_post_ok`, `non_mcp_404`, `disabled_503`, `body_413`, `ta
 but not in what the app receives; no 1xx is sent), plus the precedence cases
 `precedence_disabled_unknown_path_404` and `precedence_closing_over_cap_503`, the disabled cases
 `disabled_chunked_body_503` (a chunked body is never read for the app) and `head_mcp_503` (`HEAD` gets the
-head only), and `body_413_streamed_reset` (§4.2 streaming adapters: head out, response unfinished → RESET
-`CANCEL`). Every `*_reset` fixture (an `outReset` key) applies only to an adapter that streams the request
+head only), `body_413_streamed_reset` (§4.2 streaming adapters: head out, response unfinished → RESET
+`CANCEL`), the §4.3 forwarded-target cases `target_utf8_query`, `target_lone_percent`,
+`target_fragment_dropped` (origin-form) and `target_fragment_dropped_absolute_form`, `target_allowed_set` (one
+byte per class in the query, `%41` kept; `'` is not fixture-covered, §4.3 Apostrophe) — the expected forwarded
+target bytes are in `upstream` — and the §4.5 cases `target_unrepresentable_400`, `handler_connect_400`,
+`head_mcp_400_headonly` and `mcp_handler_status_600_500`. Every `*_reset` fixture (an `outReset` key) applies only to an adapter that streams the request
 body; a buffering adapter skips them and is covered by `body_413`, and an SDK whose bridging runner only drives
 a buffering path MAY skip them with a note in its run output.
 
@@ -981,13 +1108,14 @@ Reaching `sdkState`:
 | `registered` | `{services: [{url, id, created}], conn?}` | `registered` for the agent's name |
 | `register_error` | `{code, message?, id?, conn?}` | one `registered.errors[]` entry for the agent's name |
 | `app_error` | `{code, message?, conn?}` | `op:"error"` |
-| `disabled` | `{reason?, conn?}` | `disable` for the agent's server id (`reason` absent → omitted on the wire) |
+| `disabled` | `{reason?, id?, conn?}` | `disable` for the agent's server id (`reason` absent → omitted on the wire); `id`: for this id instead, possibly one the agent does not know (held, §2.7) |
 | `enabled` | `{conn?}` | `enable` for the agent's name |
 | `conflict` | `{reason?, conn?}` | `conflict` for the agent's name and server id |
-| `disconnect` | `{fatal, code?, wsCode?, conn?}` | the transport closes; `code` is the WIRE.md §2.8 name, `fatal` whether the ws-mixer reconnect rules give up. On a connection that had `connected` but no `welcome` it is a pre-`welcome` failure (§6.7): a failed dial |
-| `drain` | `{reason?, conn?}` | `drain` (`reason` default `rollout`); the agent dials a replacement and keeps serving on the drained connection until it ends. `reason` `replaced` is a take-over instead, handled like `conflict` (no replacement dial) |
+| `disconnect` | `{fatal, code?, wsCode?, conn?, flush_after?}` | the transport closes; `code` is the WIRE.md §2.8 name, `fatal` whether the ws-mixer reconnect rules give up. On a connection that had `connected` but no `welcome` it is a pre-`welcome` failure (§6.7): a failed dial. `flush_after`: edge-message events the connection received before it ended but that the SDK delivers to the layer after the disconnect notification (§2.7 Ended connection, T51); a runner that cannot force that post-disconnect delivery MUST skip fixture 44 with a note in its run output; every fixture with a `flush_after` carries `runnerRequirement` `"post-disconnect-delivery"` |
+| `drain` | `{reason?, conn?, retry_after_ms?}` | `drain` (`reason` default `rollout`); the agent dials a replacement and keeps serving on the drained connection until it ends. `retry_after_ms`: the `drain` carries that hint; the replacement dial waits at least that long plus at most 2000 ms of jitter (WIRE.md §2.9), so the following `retry {cause: "drain"}` has `delayMs` in `retry_after_ms … retry_after_ms + 2000`. `reason` `replaced` is a take-over instead, handled like `conflict` (no replacement dial) |
+| `token_provider` | `{result: ok\|unavailable\|error}` | the result of the token provider's **next** call (the next dial attempt); a call with no pending result returns the token (`ok`). A fixture with any `token_provider` event passes its tokens as providers (§6.2 Token provider). `unavailable`: the SDK's temporary-failure marker, a failed dial (T46); `error`: an unmarked failure, fatal (T47). A failed call ends the attempt before the socket factory, so it is not a dial in `expectDials` |
 | `hold` | `{conn?}` | the fake edge withholds `unregistered` and the close until a `disconnect` addresses that connection |
-| `retry` | `{delayMs, cause}` | advance the clock until the scheduled retry fired; `cause` ∈ `dial`, `lost`, `register`, `overloaded`, `drain` |
+| `retry` | `{delayMs, cause}` | advance the clock until the scheduled retry fired; `cause` ∈ `dial`, `lost`, `register`, `overloaded`, `drain`, `token-refresh` |
 | `tick` | `{ms}` | advance the clock |
 
 `conn` is the 1-based dial ordinal; absent = the most recent dial. After each event the runner lets the SDK run
@@ -1002,7 +1130,13 @@ one (T27, `37_t27_*`) — all 13 codes, sticky conflict, stale events from a sup
 connection, including its app messages after the replacement's `welcome` (`35_t38_*`), a drained connection's end not changing status after the replacement's `welcome` (T38) and
 changing it while the replacement's dial is still failing (T44), refusals after a success (T23, T40, T41), a
 transient error on a replacement (T16), `connecting` codes by cause (T14, T15, T27, T30), `configure`
-idempotence (same trimmed token → no dial, no snapshot) and serialization (only the last config dials).
+idempotence (same trimmed token → no dial, no snapshot) and serialization (only the last config dials), a
+token provider (`38_token_provider_refresh_retry`, `39_token_provider_unavailable_retrying`,
+`40_token_provider_error_fatal`; T46–T48), a binding `retry_after_ms` (`41_drain_retry_after_honoured`), a held
+`disable` (`42_disable_unknown_id_held`; T49, T50), `TOO_MANY_SERVICES` as a whole-frame `error` op
+(`43_too_many_services_error_op`; T25, T26), a `disable` delivered after its connection ended
+(`44_stale_disable_after_disconnect_ignored`; T51) and `dispose()` in `conflict`
+(`45_dispose_in_conflict_immediate`; T6, §5.7).
 
 **Not fixture-covered** — exactly T9, T25's and T26's malformed-envelope input, T36 and the `AbortError` rejection below
 (no event in the vocabulary reaches them; per-SDK unit tests): T9 (a synchronous
@@ -1019,7 +1153,7 @@ exactly its expected `{label, detail?}`; `rules.json` matches the SDK's resoluti
 
 ---
 
-## 11. Deviations from ws-mixer-js HEAD
+## 11. Deviations from SDK HEADs
 
 HEAD = `d45d3b4` (`SDK_VERSION` `"0.10.1"`). Each row is a change ws-mixer-js 0.11.0 makes. Rows 18–19 were
 found later, against `467bd5f` (`SDK_VERSION` `"0.11.0"`); their action is for a 0.11.x release.
@@ -1046,6 +1180,43 @@ found later, against `467bd5f` (`SDK_VERSION` `"0.11.0"`); their action is for a
 | 18 | Take-over close on the wire (§3.3, §6.8, D-2026-10-14-07) | `467bd5f`: a `conflict` (tunnel `conflicted()` → `detach()` → `handle.close()`) and a `drain{replaced}` (`closeClient()`) both call `client.close()` with its defaults: `drain{client_requested}` on stream 0, a grace wait (up to 5 s) only while streams are open, then `error{NO_ERROR}` + close `1000` (`conn.close()` ends with `fail(NO_ERROR)`, `src/conn.ts:1156`); no `unregister`. Only the drain and the grace deviate | `error{NO_ERROR}` + close `1000` at once: no `drain{client_requested}`, no grace, no `unregister`, never `APPLICATION_CLOSE` | 0.11.x: skip the drain and the grace on the take-over path |
 | 19 | Envelope check order (§2.8 rule 10, D-2026-10-14-07) | `467bd5f` `decodeEnvelope`: a `registered.services[]` entry checks `created` first, then `name`, `id`, `url`; a multi-defect entry reports the `created` error | `name`, `id`, `url`, `created` (`envelope/invalid/registered_multiple_defects.json`) | 0.11.x: move the `created` check after `url` |
 
+Rows 20 onward (v0.6.3, [`D-2026-10-15-01`](./DECISIONS.md#2026-10-15)…`-05`) cover every SDK, so they name it. HEAD
+is the build reviewed on 2026-10-14/15: ws-mixer-js 0.11.x, ws-mixer-go v0.9.0 (`b48fc00`, the first release
+that ships mcpwarp; a row marked "fixed in ws-mixer-go v0.9.0" describes its pre-release tree), the Rust crates `ws_mixer` 0.2.0
+and `ws-mixer-mcpwarp` 0.1.x, and the ws-mixer-python proposal (unreleased).
+
+| # | SDK | Item | HEAD behaviour | Spec behaviour | Action / version |
+|---|---|---|---|---|---|
+| 20 | JS | Client drain (WIRE.md §2.9 Client side of a drain) | `drain{client_requested}` without `deadline_ms` (on the wire: "immediately") while waiting 5 s; an `OPEN` during that grace is accepted and delivered | `deadline_ms: 5000`; an `OPEN` after the own drain → `RESET(REFUSED_STREAM)` | 0.11.x |
+| 21 | JS | String limits (WIRE.md §2.7) | counted in UTF-16 units (`.length`): stricter for non-BMP text | Unicode code points | 0.11.x |
+| 22 | JS | `drain.retry_after_ms` (WIRE.md §2.9) | ignored; drain jitter only | wait ≥ `retry_after_ms`, + ≤ 2000 ms jitter | 0.11.x |
+| 23 | JS | Own graceful close (CLIENT-SDK.md Disconnect reason shape) | reports `errorCode: 0` / `NO_ERROR` | no `errorCode`/`errorName`; `wsCode: 1000` only | 0.11.x, minor |
+| 24 | JS | Unrepresentable request in target mode (§4.5) | `500` `internal error` (`Headers.append` throws) | `400` `request cannot be represented as a web Request` (`bridging/target_unrepresentable_400`) | 0.11.x |
+| 25 | JS | Forwarded target encoding (§4.3) | the forwarded target re-encoded: raw UTF-8 `?q=café` → `caf%C3%83%C2%A9` | encoded once from the received bytes (`bridging/target_utf8_query`) | 0.11.x |
+| 26 | JS | Head cap (§4.2) | terminating blank line not counted | counted | 0.11.x, minor |
+| 27 | JS | `HEAD` head-parse-error replies (§4.5) | `400`/`431` sent with a body, as for `GET` | head-only (`bridging/head_mcp_400_headonly`) | 0.11.x, minor |
+| 28 | JS | `disable` with an unknown id (§2.7) | adopted as the handle's id before the first registration | held until a `registered` brings it (`tunnel/42_disable_unknown_id_held`) | 0.11.2, minor |
+| 29 | JS | Ops after the connection ended (§2.7) | `conn.ts` applies `registered`/`disable`/`enable` flushed after the disconnect | ignored; `conflict`/`error` still applied (`tunnel/44_stale_disable_after_disconnect_ignored`) | 0.11.x, minor |
+| 30 | JS | WINDOW stale check (WIRE.md §2.5) | `frame.ts` raises the increment-0 `StreamError` before the stale check | stale check first | 0.11.x, minor |
+| 31 | JS | Token provider on the tunnel (§6.2) | `TunnelConfig.token` string only | string or provider (T46–T48) | 0.11.x: accept a provider |
+| 32 | Go | Own drain (WIRE.md §2.9) | an `OPEN` after its own `drain{client_requested}` is checked against `last_stream_id` 0: spurious `4001` | `RESET(REFUSED_STREAM)` | fixed in ws-mixer-go v0.9.0 |
+| 33 | Go | Hand-over retire (WIRE.md §2.9) | the drained connection is closed at the replacement's `welcome`, cutting in-flight streams | retired at `deadline_ms + 1000` (30000 absent) from the replacement's `welcome`, earlier when empty | fixed in ws-mixer-go v0.9.0 |
+| 34 | Go | Integral numbers (WIRE.md §2.7) | ws-mixer `fieldInt` rejects `1.0`/`1e3` (`PROTOCOL_ERROR`), while the mcpwarp `v` check accepts `1.0` | accepted as the integer | fixed in ws-mixer-go v0.9.0 |
+| 35 | Go | String limits (WIRE.md §2.7) | counted in UTF-8 bytes: stricter for any non-ASCII text | Unicode code points | fixed in ws-mixer-go v0.9.0 |
+| 36 | Go | Forwarded target `%` and `#` (§4.3) | a lone `%` rewritten to `%25`; `#` escaped as `%23` | lone `%` kept; fragment cut (`bridging/target_lone_percent`, `target_fragment_dropped`) | fixed in ws-mixer-go v0.9.0 |
+| 37 | Go | Take-over close (§6.8) | after a `conflict` op sends `drain{client_requested}` first | `error{NO_ERROR}` + `1000` at once (`(*Client).CloseImmediately`) | fixed in ws-mixer-go v0.9.0 |
+| 38 | Go | Unrepresentable request in target mode (§4.5) | forwarded raw; likely `502` | `400` | fixed in ws-mixer-go v0.9.0 (`TestBridgeUnrepresentable400`) |
+| 39 | Go | `HEAD` head-parse-error replies (§4.5) | `400`/`431` sent with a body, as for `GET` | head-only | fixed in ws-mixer-go v0.9.0 (`TestBridgeHeadRepliesHeadOnly`) |
+| 40 | Go | WINDOW for a retired id (WIRE.md §2.5) | v0.9.0 raises the increment-`0` stream error at decode (`wsmixer/frame.go:121`), before the stale check (`dispatch.go:224`): a retired id is answered with RESET (fails `sequences/window_stale_retired_stream`) | stale check first: discard + count stale | next ws-mixer-go release, minor |
+| 41 | Go | Token provider on the tunnel (§6.2) | `TunnelConfig.Token` string only (`mcpwarp/tunnel.go:88`) | string or provider (T46–T48) | v0.10.0: accept a provider |
+| 42 | Rust | `disable` with an unknown id (§2.7) | adopted when no id is known; a foreign id dropped | held until a `registered` brings it | `ws-mixer-mcpwarp` 0.1.1, minor |
+| 43 | Rust | Forwarded target `[` `]` (§4.3) | escaped | passed through unescaped | fixed |
+| 44 | Rust | Token provider on the tunnel (§6.2) | `TunnelConfig.token` string only | string or provider | 0.1.x: accept a provider |
+| 45 | Python | `drain.retry_after_ms` (WIRE.md §2.9) | ignored (proposal) | wait ≥ `retry_after_ms`, + ≤ 2000 ms jitter | before the first release |
+| 46 | Go | `disable` with an unknown id (§2.7) | adopted when no id is known (`mcpwarp/session.go:322`) | held until a `registered` brings it (`tunnel/42_disable_unknown_id_held`) | next ws-mixer-go release |
+| 47 | JS | Unrepresentable methods in `./node` `server` mode (§4.5) | `CONNECT`, `TRACE`, `TRACK` not refused | `400` `request cannot be represented as a web Request` (`bridging/handler_connect_400`) | 0.11.x |
+| 48 | Python | Unrepresentable requests (§4.5) | `CONNECT`, `TRACE`, `TRACK` and NUL header values not refused, handler and target mode | `400` `request cannot be represented as a web Request` | 0.1.x |
+
 Not deviations (spec = HEAD, where earlier docs were wrong or silent): MCP pass-through (§4.7), inbound
 acceptance (§2.7), register backoff across reconnects (§3.2), the `/:\s+/g` colon rewrite (§7), decode defaults
 (§2.8), body-cap overshoot (§4.2), target timeout (§4.5), `stop()` during the dial (§6.3), the `onRetry` payload
@@ -1058,7 +1229,7 @@ field name `reason` (kept; an earlier draft said `cause`, D-2026-10-14-04).
 **SDK author (Tier 1)**
 
 - [ ] `hello.token` always; `Authorization` only when headers are possible; token provider called per dial.
-- [ ] `hello.meta.integration` lowercased UUID; `X-Mcpwarp-Integration` equal to it when headers are possible.
+- [ ] `hello.meta.integration` = the integration product's assigned UUID (one constant per product, never generated per install or device, §2.4), lowercased; `X-Mcpwarp-Integration` equal to it when headers are possible.
 - [ ] `register` equal to §2.2 as a JSON value (canonical bytes SHOULD), one service, on every `welcome`.
 - [ ] Decode rules §2.8, including `url` required, `null` optional strings rejected, and rule 10's check order.
 - [ ] Transient backoff 1 s … 30 s, counter reset only on success; `OVERLOADED` re-send after 1000 ms.
@@ -1072,7 +1243,8 @@ field name `reason` (kept; an earlier draft said `cause`, D-2026-10-14-04).
 
 - [ ] `expose()` validation order, resolution table and handle per §5.
 - [ ] Tunnel: `configure` never throws; idempotent on trimmed token; serialized, last config wins.
-- [ ] Only the 17 legal (state, code) pairs; `lastError` constants verbatim; T1–T45.
+- [ ] Only the 17 legal (state, code) pairs; `lastError` constants verbatim; T1–T51.
+- [ ] `TunnelConfig.token` accepts a string or a provider (§6.2 Token provider).
 - [ ] `stop()` during a dial leaks no event; `dispose()` final and bounded.
 - [ ] `onRetry` before every retry; logs prefixed `CODE: `; token never logged.
 - [ ] Status-text tables string-identical to the JSON files; tunnel and status-text fixtures green in CI.

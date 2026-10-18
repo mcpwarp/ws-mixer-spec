@@ -1,0 +1,22 @@
+{
+  "description": "drain.retry_after_ms binds the replacement dial (WIRE.md §2.9; MCPWARP.md §5.9): a drain with retry_after_ms 5000 while online schedules the replacement dial at least 5000 ms later, plus at most 2000 ms of jitter, so onRetry reports {attempt 0, reason \"drain\"} with delayMs 5000..7000 (the delay actually waited), never the plain 0-2000 ms drain jitter. Status stays online throughout; the drained connection ends after the replacement's welcome (T38).",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "drain": { "retry_after_ms": 5000 } },
+    { "retry": { "delayMs": 7000, "cause": "drain" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disconnect": { "conn": 1, "fatal": false, "code": "GOING_AWAY", "wsCode": 4012 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 2
+}

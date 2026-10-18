@@ -1,0 +1,22 @@
+{
+  "description": "dispose() in state conflict closes immediately (MCPWARP.md §5.7, §6.8 Take-over close): the name is gone, so there is nothing to unregister or drain. The fake edge holds the connection open; the conflict makes the SDK close it at once (error{NO_ERROR} + WS close 1000), and the disconnect {fatal: false, wsCode: 1000} after the conflict models that take-over close completing (the held edge answering the SDK's own close frame), so an SDK whose dispose() awaits the socket close can resolve. It ends an already-ended generation: no snapshot, no reconnect. The fixture never ticks, so a dispose() that waited on an unregister or a drain grace would stay unresolved at the end: one off at once, then nothing.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "hold": {} },
+    { "conflict": { "reason": "taken_over" } },
+    { "disconnect": { "fatal": false, "wsCode": 1000 } },
+    { "dispose": {} }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "conflict", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." },
+    { "state": "off" }
+  ],
+  "expectDials": 1
+}

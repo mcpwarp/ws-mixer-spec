@@ -1,0 +1,24 @@
+{
+  "description": "Target mode, `%` is never touched (MCPWARP.md §4.3): a `%` not followed by two hex digits (`%zz`, a trailing `50%`) is kept as is, not rewritten to `%25`, and the valid escape `%20` is not decoded. The target URL's own query (`k=1`) comes first, joined to the request's query with `&`, both verbatim (no URLSearchParams-style rebuild). MCPWARP.md §4.6",
+  "sdkState": "online",
+  "mode": "target",
+  "target": "http://127.0.0.1:3000/mcp?k=1",
+  "limits": { "maxRequestBodyBytes": 4194304, "targetTimeoutMs": 30000 },
+  "handler": { "behaviour": "echo" },
+  "in": "POST /mcp?a=%zz&b=x%20y&c=50% HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\ncontent-type: application/json\r\nuser-agent: Go-http-client/1.1\r\nContent-Length: 40\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}",
+  "upstream": {
+    "method": "POST",
+    "url": "http://127.0.0.1:3000/mcp?k=1&a=%zz&b=x%20y&c=50%",
+    "headers": {
+      "accept": "application/json, text/event-stream",
+      "accept-encoding": "identity",
+      "content-type": "application/json",
+      "user-agent": "Go-http-client/1.1",
+      "x-forwarded-host": "notes-tester.mcpwarp.test",
+      "x-forwarded-proto": "https"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
+  },
+  "out": "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n28\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\r\n0\r\n\r\n",
+  "notes": "In target mode `handler` describes the local server, and upstream.url is the request line it receives (as an absolute URL). ws-mixer-go before v0.9.0 rewrote a lone `%` to `%25`."
+}

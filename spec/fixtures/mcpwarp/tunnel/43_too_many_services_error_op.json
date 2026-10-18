@@ -1,0 +1,18 @@
+{
+  "description": "TOO_MANY_SERVICES is a whole-frame app error op (MCPWARP.md §2.6, cap 100), not a per-service register error: while online it is a non-fatal error event, logged warn, and the status does not change (T26). No close, no redial during a long tick.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "app_error": { "code": "TOO_MANY_SERVICES", "message": "too many services: 101 > 100" } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" }
+  ],
+  "expectDials": 1
+}

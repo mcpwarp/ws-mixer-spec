@@ -1,0 +1,26 @@
+{
+  "description": "disable with an id the agent does not know (MCPWARP.md §2.7): it is held, never adopted as the agent's own id, since disable fans out to every connection of the owner. A disable for another service's id (srv_other) before the first registered changes nothing, and the registered for srv_notes goes online. After stop() and a fresh start, a disable for srv_notes that arrives before the registered bringing that id produces no snapshot; that registered then applies it: disabled/DISABLED directly, no online in between.",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "disabled": { "id": "srv_other", "reason": "disabled" } },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "stop": {} },
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "disabled": { "id": "srv_notes", "reason": "disabled" } },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "disabled", "code": "DISABLED", "lastError": "This service is disabled in the mcpwarp dashboard." }
+  ],
+  "expectDials": 2
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Ops delivered after their connection ended (MCPWARP.md §2.7 Ended connection, §5.9; CLIENT-SDK.md Handler delivery row): each flush_after op was received on the connection before the 4012 close but is delivered to the mcpwarp layer AFTER the disconnect notification. A disable delivered that way is ignored, so the status is connecting/DISCONNECTED (T30), never disabled, and the reconnect goes online. A conflict delivered the same way still applies, because conflict is sticky (and is not a superseded connection's op, T38): conflict/TAKEN_OVER, and no reconnect during a long tick. The fixture depends on that delivery order: a runner that cannot force the disconnect notification ahead of the flushed ops MUST skip it with a note (runnerRequirement).",
+  "runnerRequirement": "post-disconnect-delivery",
+  "config": { "enabled": true, "token": "t", "name": "notes" },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": true }] } },
+    { "disconnect": { "fatal": false, "code": "GOING_AWAY", "wsCode": 4012, "flush_after": [{ "disabled": { "reason": "disabled" } }] } },
+    { "retry": { "delayMs": 60000, "cause": "lost" } },
+    { "connected": {} },
+    { "welcome": {} },
+    { "registered": { "services": [{ "url": "https://notes-tester.mcpwarp.test/mcp", "id": "srv_notes", "created": false }] } },
+    { "disconnect": { "fatal": false, "code": "GOING_AWAY", "wsCode": 4012, "flush_after": [{ "conflict": { "reason": "taken_over" } }] } },
+    { "tick": { "ms": 120000 } }
+  ],
+  "expect": [
+    { "state": "off" },
+    { "state": "connecting" },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "online", "url": "https://notes-tester.mcpwarp.test/mcp" },
+    { "state": "connecting", "code": "DISCONNECTED", "lastError": "Connection lost; retrying." },
+    { "state": "conflict", "code": "TAKEN_OVER", "lastError": "Another connection took over this name." }
+  ],
+  "expectDials": 2
+}

@@ -1,0 +1,11 @@
+{
+  "description": "Handler mode: a CONNECT to /mcp passes the target-form, path, state and body checks, but CONNECT (like TRACE and TRACK) is a forbidden method no web Request can carry, so it is answered 400 {\"error\":\"request cannot be represented as a web Request\"} without calling the handler, the same byte-exact reply as target_unrepresentable_400, never a 405 or a 500. MCPWARP.md §4.5",
+  "sdkState": "online",
+  "mode": "handler",
+  "limits": { "maxRequestBodyBytes": 4194304 },
+  "handler": { "behaviour": "echo" },
+  "in": "CONNECT /mcp HTTP/1.1\r\nHost: notes-tester.mcpwarp.test\r\naccept: application/json, text/event-stream\r\nuser-agent: Go-http-client/1.1\r\n\r\n",
+  "upstream": null,
+  "out": "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: 58\r\n\r\n{\"error\":\"request cannot be represented as a web Request\"}",
+  "notes": "The fetch standard's forbidden methods (CONNECT, TRACE, TRACK, matched case-insensitively) make the Request constructor throw; an SDK whose request type could carry them still answers this 400 in both modes, so the runtimes agree. The target is origin-form /mcp so that only the method decides; a CONNECT with an authority-form target is the earlier 400 unsupported request target form."
+}

@@ -71,7 +71,7 @@ Unknown `type` → **ignore and count**. Combined with `capabilities` negotiatio
 |---|---|---|
 | `OPEN` | **empty** | Pure state event. No metadata, no ACK to wait for. A DATA frame may follow in the same tick. |
 | `DATA` | opaque bytes | On stream 0: exactly one UTF-8 JSON **object** (§2.6). |
-| `WINDOW` | `uint32 BE increment`, exactly 4 bytes | Legal range `1 … 2^31-1`. Length ≠ 4 → conn `FRAME_SIZE_ERROR`. Increment 0 → stream `PROTOCOL_ERROR`. |
+| `WINDOW` | `uint32 BE increment`, exactly 4 bytes | Legal range `1 … 2^31-1`. Length ≠ 4 → conn `FRAME_SIZE_ERROR`. Increment 0 on a live stream → stream `PROTOCOL_ERROR`; a WINDOW for a retired id is stale first, whatever its increment (§2.5). |
 | `CLOSE` | **empty** | Trailing bytes MUST be ignored and counted. |
 | `RESET` | `uint32 BE error_code` + optional UTF-8 message | Message SHOULD be ≤ 256 B, no NUL. `< 4 bytes` → conn `FRAME_SIZE_ERROR`. Invalid UTF-8 in the message → replace chars, do not kill the connection. |
 
@@ -137,7 +137,13 @@ stateDiagram-v2
 | open | **conn PROTOCOL_ERROR** (dup) | buffer, debit credit | credit sender | → half-closed(remote) | → closed, drop buffer |
 | half-closed (local) | conn PROTOCOL_ERROR | buffer, debit credit | **tolerate, ignore** | → closed | → closed, drop buffer |
 | half-closed (remote) | conn PROTOCOL_ERROR | **RESET(STREAM_CLOSED)** | **tolerate, ignore** | **RESET(STREAM_CLOSED)** | → closed |
-| `id ≤ highest_opened`, no live stream | conn PROTOCOL_ERROR | **discard + count + debug log** | discard + count | discard + count | discard + count |
+| `id ≤ highest_opened`, no live stream | conn PROTOCOL_ERROR | **discard + count + debug log** | discard + count (any increment, `0` included) | discard + count | discard + count |
+
+**WINDOW: stale check first.** A receiver MUST classify a WINDOW by the row above before it looks at the
+increment: a WINDOW for an id ≤ `highest_opened` with no live stream is discarded and counted stale whatever
+its increment, `0` included. Only a WINDOW with increment `0` for a **live** stream (open or half-closed) is
+answered with `RESET(PROTOCOL_ERROR)` on that stream (§2.3); it is never a connection error
+(`frames/window_increment_zero.json`).
 
 **Decision 3, restated because it is the one asymmetry people get wrong:**
 a frame for a stream that *was* open and is now gone is a benign race (the peer's frames were already in
@@ -283,15 +289,16 @@ a duplicate `pong` → ignore + count. `pong` is never unsolicited.
 | Field | Type | Req | Notes |
 |---|---|:--:|---|
 | `reason` | enum string | ✔ | `rollout` \| `overload` \| `id_exhausted` \| `replaced` \| `maintenance` \| `client_requested` |
-| `last_stream_id` | integer | ✔ | highest id the server has opened or will open. Everything above was definitely never processed |
-| `deadline_ms` | integer | | grace for in-flight streams. Absent = immediately |
-| `retry_after_ms` | integer | | reconnect hint. Absent = reconnect immediately with jitter |
+| `last_stream_id` | integer | ✔ | highest id the server has opened or will open. Everything above was definitely never processed. In a client's `drain{client_requested}`: its `highest_opened` (§2.9 Client side of a drain) |
+| `deadline_ms` | integer | | grace for in-flight streams. Absent = immediately. In a client's `drain{client_requested}`: the grace the client will actually wait, `5000` |
+| `retry_after_ms` | integer | | the client MUST wait at least this long before the replacement dial, and MAY add up to 2000 ms jitter (§2.9). Absent = `random(0, 2000)` ms |
 | `message` | string ≤ 256 | | human text for the peer's log |
 
 After sending `drain` the server MUST NOT send `OPEN`; it MAY keep sending DATA/WINDOW/CLOSE/RESET.
-A client receiving `OPEN` with `id` > `last_stream_id` after `drain` MUST treat it as connection
+A client receiving `OPEN` with `id` > `last_stream_id` after a `drain` it **received** MUST treat it as connection
 `PROTOCOL_ERROR` (4001) — strict, not a stream-scoped `REFUSED_STREAM`, because it means the server has
-violated the boundary it already promised.
+violated the boundary it already promised. An `OPEN` after the client's **own** `drain{client_requested}` is
+not this case: it gets `RESET(REFUSED_STREAM)` (§2.9 Client side of a drain).
 An **unknown `reason` is not fatal** — treat as `maintenance` and count. (Closed enums degrade; unknown
 *message types* do not — see below.) The client may send `drain` only with `reason:"client_requested"`.
 
@@ -350,6 +357,11 @@ Numbers: timestamps are integer ms since the Unix epoch; durations are integer m
 byte counts are plain integers. **No floats anywhere in the control channel** — floats are where JSON
 parsers disagree.
 
+| Rule | Detail |
+|---|---|
+| Integer fields | A sender MUST write every integer field as a plain integer literal (no fraction, no exponent). A receiver MUST accept any JSON number whose value is integral as that integer (`1.0` and `1e0` are `1`), subject to the field's normal range check, as JSON Schema 2020-12's `"type":"integer"` does. A boolean is never an integer: `"v": true` fails the field's type check. Fixtures: `control/hello/valid/version_integral_float` (`"v": 1.0`), `control/hello/invalid/version_boolean` (`"v": true`). |
+| String limits | The control-message string limits — `hello.token` 1–4096, `error.message` ≤ 1024, `drain.message` ≤ 256, `welcome.session` ≤ 64 — count **Unicode code points** (JSON Schema `maxLength`), not UTF-16 units and not bytes. A sender SHOULD also keep each such string within the same number of UTF-8 bytes, so it passes under every unit. Fixtures: `control/error/valid/message_1024_code_points_non_bmp` (a non-BMP `error.message` of exactly 1024 code points) and `control/error/invalid/message_1025_code_points_non_bmp`. The byte limits stay bytes: the WS close reason (123 UTF-8 bytes, §2.4) and the RESET message (≤ 256 B, §2.3). |
+
 ### 2.8 Error codes
 
 One 32-bit space shared by RESET and connection errors.
@@ -385,7 +397,10 @@ split is load-bearing: `REFUSED_STREAM` promises nothing was processed so the la
 side's application, via the SDK's close API, never by ws-mixer itself. The reason is carried in
 `error.message` and, truncated to 123 UTF-8 bytes on a character boundary, in the WS close reason; because
 there is exactly one application close code, applications SHOULD start it with a stable machine-readable
-token (e.g. `CONNECTION_LIMIT: over per-tenant cap`). A real trap: application error codes `>= 0x1000_0000`
+token (e.g. `CONNECTION_LIMIT: over per-tenant cap`). mcpwarp's edge refuses an agent connection over its
+per-owner limit this way (informative: 10 connections per owner per pod): an mcpwarp `error{CONNECTION_LIMIT}`
+`app` op, then `APPLICATION_CLOSE`, WS close **4014** with a reason starting `CONNECTION_LIMIT:` — not
+`4009` ([MCPWARP.md §2.6](./MCPWARP.md#26-errorcode)). A real trap: application error codes `>= 0x1000_0000`
 (§2.8's own free-for-the-layer-above range) cannot be used for a connection close. The binding limit is RFC
 6455 §7.4.2's private-use close-code range, 4000–4999: `ws_close = 4000 + code` is only a legal close code
 for `code ≤ 0x3e7` (999); codes `>= 0x1000_0000` additionally don't even fit the 16-bit close-code field.
@@ -395,6 +410,10 @@ the unmappable code is a peer's or ws-mixer's own `error.code` it is closing on:
 attempt an illegal close code (WebSocket libraries respond by sending no close frame at all, or by
 throwing, leaving the peer a bare `1006`). It sends WS close `4002` (`INTERNAL_ERROR`'s close code) instead,
 while `error.code` still carries the real, unclamped code.
+
+An SDK's stream-reset API SHOULD reject, with a local error and nothing sent, a code this table marks
+connection-only (no ✔ in the Stream column), `NO_ERROR` and `APPLICATION_CLOSE` included; codes
+`≥ 0x1000_0000` stay allowed.
 
 Non-ws-mixer close codes a client must still handle: `1001` (treat as 4012), `1006` (abnormal, normal
 backoff), `1009` (library rejected an oversized message), `1011` (an SDK left its library's own
@@ -418,7 +437,7 @@ backoff), `1009` (library rejected an oversized message), `1011` (an SDK left it
 | Unknown frame **type** | ignore + count | — |
 | Frame for a previously-open, now-dead stream | discard + count + debug log | — |
 | DATA or CLOSE after the peer's CLOSE | **stream** | `STREAM_CLOSED` |
-| OPEN beyond `max_streams` | **stream** | `STREAM_LIMIT` (repeat offence → conn `ENHANCE_YOUR_CALM`) |
+| OPEN beyond `max_streams` | **stream** | `STREAM_LIMIT`. Repeat offence: the client MAY escalate to conn `ENHANCE_YOUR_CALM`; suggested default 20 refusals within 10 s. An SDK that escalates MUST count only OPENs above the `max_streams` it declared on the wire, never above a lower ceiling it applies locally |
 | Application declines the stream | **stream** | `REFUSED_STREAM` |
 | Local handler failed / cancelled | **stream** | `INTERNAL_ERROR` / `CANCEL` |
 
@@ -510,7 +529,7 @@ sequenceDiagram
     Note over S: policy fires (rollout / idle > 24 h / overload / id exhaustion)
     S->>C: {"t":"drain","reason":"rollout","last_stream_id":1287,"deadline_ms":25000}
     Note over S: stop sending OPEN
-    Note over C: start a NEW connection in parallel, now
+    Note over C: start a NEW connection in parallel (after retry_after_ms, else 0–2000 ms jitter)
     C->>S: in-flight streams finish normally
     Note over S: at deadline: RESET(CANCEL) every survivor
     S->>C: {"t":"error","code":12,"message":"draining: rollout"}
@@ -519,8 +538,11 @@ sequenceDiagram
 
 `Conn.Drain(reason, opts)` is a **first-class public API**, not a shutdown-only path. Any server policy can
 call it: rollout, "kick idle tunnels after 24 h", shedding load off a hot pod, id exhaustion, or an
-application-level policy such as mcpwarp draining a free-tier user's old connection when a new one shows up.
-The protocol is identical in every case; only `reason` and `deadline_ms` change.
+application-level policy. The protocol is identical in every case; only `reason` and `deadline_ms` change.
+(Historical, informative: earlier versions named "mcpwarp draining a free-tier user's old connection with
+`reason:"replaced"`" as such a policy. The deployed mcpwarp edge never sends `drain{replaced}`: its take-over is
+the per-name mcpwarp `conflict{reason:"taken_over"}` op ([MCPWARP.md §3.3](./MCPWARP.md#33-conflict-and-take-over)),
+and a connection it drains hands its names over silently.)
 
 Only **one** `drain` is needed, never HTTP/2's two-GOAWAY dance — because only the server opens streams, so
 `last_stream_id` is exact on the first send with no race. **Endpoints MUST NOT increase the value they later
@@ -530,6 +552,15 @@ That retry-safe treatment applies to streams the client itself already had open 
 does **not** extend to a **new** `OPEN` the server sends afterward for an id above `last_stream_id`: per
 §2.7, that is a connection `PROTOCOL_ERROR` (4001), since only the server opens streams and it already
 promised not to open any past that boundary.
+
+**Client side of a drain**
+
+| Rule | Detail |
+|---|---|
+| Replacement dial | On a received `drain` the client dials a replacement in parallel, before the old connection closes. With `retry_after_ms` present it MUST wait at least `retry_after_ms` before that dial and MAY add up to 2000 ms jitter on top; absent, it waits `random(0, 2000)` ms. The Reconnect table's `attempt` is not consulted. A `4009` close carries no hint (`retry_after_ms` exists only on `drain`) and follows its own Reconnect row. |
+| Retiring the drained connection | The old connection keeps serving: its in-flight streams finish normally. It is retired at `deadline_ms + 1000` ms (`30000` ms when `deadline_ms` is absent), timed from the **replacement's `welcome`**, or earlier, as soon as it has no streams left. At retirement every surviving stream ends with `CANCEL` — the SDK fails it locally with `CANCEL` and MAY put `RESET(CANCEL)` on the wire first — then `error{NO_ERROR}` on stream 0 and WS close `1000`. The server's own deadline close (`4012`) normally arrives first; the client's timer is the safety cap. |
+| Client-sent drain | `drain{reason:"client_requested"}` carries `last_stream_id` = the client's `highest_opened` (§2.5: the highest `OPEN` id it has received, `0` if none) and `deadline_ms` = the grace the client will actually wait, `5000` (§2.10 item 14). The server SHOULD stop sending `OPEN` once it receives it. An `OPEN` that arrives after the client sent its drain MUST be answered with `RESET(REFUSED_STREAM)` on that stream, never a connection error: it can cross the drain on the wire, and its id is above the `last_stream_id` already sent, so it is retry-safe. |
+| Locally closed connection | Once the SDK has closed a connection locally it MUST ignore every inbound frame on it: no `welcome` handling, no timers, no events. A dial scheduled before the SDK's close MUST NOT reach the socket factory after that close. |
 
 Kubernetes rollout shape, since it drives the numbers:
 
@@ -552,14 +583,14 @@ enough and must be set explicitly.
 
 | Trigger | Policy |
 |---|---|
-| `drain` received | new connection **immediately and in parallel**, before the old one closes. Jitter `random(0, 2000) ms` only |
+| `drain` received | new connection **in parallel**, before the old one closes: after `retry_after_ms` (+ up to 2000 ms jitter) when present, else after jitter `random(0, 2000) ms` only (Client side of a drain, above) |
 | close `4012` with no preceding `drain` | reconnect immediately, same jitter |
 | close `4013 KEEPALIVE_TIMEOUT` | one immediate attempt, then normal backoff. This one-immediate-attempt budget re-arms only once the connection reaches **stability** (below) — a server that welcomes and immediately drops the link does not get a fresh budget every cycle |
 | close `4014 APPLICATION_CLOSE` | **not fatal**; start at `cap` (delay = random(0, cap)), regardless of where `attempt` currently sits — an application close is a deliberate, post-`welcome` refusal, and start-at-cap is how the SDK signals "back off hard now" even on the very first occurrence; an SDK MUST NOT treat it as a protocol failure |
 | close `1006` / TCP reset / DNS failure / HTTP 5xx | normal backoff (429: honour `Retry-After`) |
 | provider call fails with its SDK-defined temporary-failure marker (Go: wraps `ErrTokenUnavailable`; JS: `TokenUnavailableError`) | same as the row above: `phase: "dial"`, normal backoff, counts as a failed attempt against the same `attempt`/stability/bounded-retry rules — no immediate retry. An unmarked provider failure is not this row; see CLIENT-SDK.md's Provider failure row |
 | close `4001` / `4003` / `4004` | normal backoff **and a loud developer-facing error** — these mean an SDK bug and a silent retry loop hides it |
-| close `4009` | start at `cap`; honour `retry_after_ms` — same "refused on purpose" signal as `4014`, independent of `attempt` |
+| close `4009` | start at `cap` — same "refused on purpose" signal as `4014`, independent of `attempt`. A close carries no `retry_after_ms`; that hint binds only the `drain` row above |
 | HTTP `401` on the upgrade, or close `4011` **before `welcome`** | `token` is a provider (callback): call it once more, redial immediately, no backoff; a second rejection (either form) is fatal. This one-refresh budget re-arms only once a connection reaches stability (below) — never on a `welcome` alone, so a server that welcomes and immediately closes cannot mint a fresh refresh every cycle. `token` is a static string: fatal on the first rejection — no retry, no backoff loop (the same token cannot start working, and retrying forever hammers the auth service and hides the real problem from the user) |
 | close `4011` **after `welcome`** | **fatal — never reconnect.** Unaffected by the row above — a token accepted once cannot be silently refreshed after the session it authorized is already running |
 | close `4010`; HTTP `403`, HTTP `404`; missing subprotocol echo | **fatal — never reconnect.** Surface and exit |
@@ -593,7 +624,7 @@ the same reason: a budget re-armable by a mere `welcome` is re-armable by a serv
 immediately closes. This timer is per connection: a drain hand-over (above) starts a new connection in
 parallel before the old one closes, and the old connection's own eventual close does not cancel the new
 connection's stability timer — each connection arms, and can only cancel, its own. Drain-driven reconnects
-(immediate, jitter `0–2000 ms`) are untouched by any of this — they are not governed by `attempt` at all.
+(`retry_after_ms` when present, else jitter `0–2000 ms`) are untouched by any of this — they are not governed by `attempt` at all.
 
 An SDK that offers a bounded retry count `N` counts against this same `attempt` — consecutive reconnects
 since the last stable connection — and goes fatal when the `N`th such reconnect fails, exactly like an SDK
@@ -611,9 +642,12 @@ connections to the mux. Whether that is a problem, and what to do about it, is d
 application, using three primitives ws-mixer already exposes: a server-side connection-accept hook sees
 every new connection before it is accepted and can look up whatever identity concept the application uses,
 `Conn.Drain(reason, opts)` (§2.9) can be called on any existing `Conn` at any time, and an immediate close
-with `APPLICATION_CLOSE` (§2.8) is available when draining is too slow. mcpwarp, for example, drains the
-old connection for free-tier users (`reason:"replaced"`, a short `deadline_ms`) and keeps a pool of
-connections per user for paid tiers instead. ws-mixer supplies the mechanism; it does not pick the policy.
+with `APPLICATION_CLOSE` (§2.8) is available when draining is too slow. ws-mixer supplies the mechanism; it
+does not pick the policy. (Historical, informative: this paragraph used to say mcpwarp drains a free-tier
+user's old connection with `reason:"replaced"`. The deployed mcpwarp edge never does: the same owner
+registering the same name on a second connection is a per-name take-over, `conflict{reason:"taken_over"}` to
+the losing connection while its other names stay live ([MCPWARP.md §3.3](./MCPWARP.md#33-conflict-and-take-over)),
+and a connection it drains hands its names over silently.)
 
 ### 2.10 Python implementer checklist
 
@@ -628,9 +662,9 @@ connections per user for paid tiers instead. ws-mixer supplies the mechanism; it
 9. Implement the 5×5 state table (§2.5) longhand. Any conn-error cell → `error` on stream 0, WS close `4000 + code`, done.
 10. Keep `highest_opened`; **id > highest_opened and not OPEN → connection error**; **id ≤ highest_opened with no live stream → discard, count, debug log**.
 11. Remember: **CLOSE delivers the buffer then EOF; RESET drops it.** When the connection itself dies instead — any reason other than that stream's own CLOSE, abnormal closure included — every still-open stream owes its reader/writer an error instead, never a clean EOF (CLIENT-SDK.md's Stream teardown on disconnect row).
-12. Control dispatcher, a `match` on `t`: `ping`→`pong` at the **head** of the control queue · `pong`→ unknown id is a conn error, else record `last_pong_at`/RTT · `drain`→ stop expecting OPEN, start reconnecting now, arm the deadline timer · `error`→ log loudly, close, **never reply** · `app`→ hand `body` to the application (an `app` already dequeued before a following `error` is still owed to it, CLIENT-SDK.md's Handler delivery row) · `hello`/`welcome` after the handshake → conn error · unknown `t` → conn error naming the string.
+12. Control dispatcher, a `match` on `t`: `ping`→`pong` at the **head** of the control queue · `pong`→ unknown id is a conn error, else record `last_pong_at`/RTT · `drain`→ stop expecting OPEN, schedule the replacement dial (`retry_after_ms` or jitter), retire the old connection per §2.9 Client side of a drain · `error`→ log loudly, close, **never reply** · `app`→ hand `body` to the application (an `app` already dequeued before a following `error` is still owed to it, CLIENT-SDK.md's Handler delivery row) · `hello`/`welcome` after the handshake → conn error · unknown `t` → conn error naming the string.
 13. Four timers, that is all: ping (first sleep `random(0, interval)`), watchdog (`now - last_pong_at > ping_timeout` → `error{KEEPALIVE_TIMEOUT}` + close 4013), handshake timer (cancelled by `welcome`), stability timer — **one per connection** (armed at that connection's own `welcome`, cancelled if that same connection ends before it fires; a drain hand-over's old connection closing does NOT cancel the new connection's timer; on firing, resets the backoff counter and re-arms the once-only budgets above).
-14. On SIGINT/SIGTERM: `drain{reason:"client_requested"}`, wait up to 5 s, `error{NO_ERROR}`, close 1000.
+14. On SIGINT/SIGTERM: `drain{reason:"client_requested", last_stream_id: highest_opened, deadline_ms: 5000}`, wait up to 5 s (an `OPEN` arriving meanwhile → `RESET(REFUSED_STREAM)`, §2.9 Client side of a drain), `error{NO_ERROR}`, close 1000.
     Also expose an application close taking a message only, no code: it always sends `error{APPLICATION_CLOSE}`
     and closes `4014` (CLIENT-SDK.md's Application close row), and stops any reconnect loop.
 15. Validation order, each step with its own message: parse → is object → has string `t` → `t` is known → per-type field checks. In tests, run `spec/fixtures/*.json` against `jsonschema.Draft202012Validator` **and** your hand-written validator and assert they agree.

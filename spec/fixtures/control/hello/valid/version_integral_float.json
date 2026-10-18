@@ -1,0 +1,11 @@
+{
+  "description": "hello.v written as 1.0: a receiver MUST accept any JSON number whose value is integral as that integer (WIRE.md section 2.7 Integer fields row, as JSON Schema 2020-12's \"type\":\"integer\" does), so this is v 1. A sender still writes a plain 1.",
+  "message": {
+    "t": "hello",
+    "v": 1.0,
+    "token": "eyJhbGciOiJIUzI1NiJ9.abc123",
+    "agent": { "sdk": "ws-mixer-py", "sdk_version": "0.2.0" }
+  },
+  "schema_valid": true,
+  "wire_valid": true
+}

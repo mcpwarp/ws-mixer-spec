@@ -1,5 +1,5 @@
 {
-  "description": "error.message exceeds the 1024-byte cap",
+  "description": "error.message exceeds the 1024-code-point cap (WIRE.md section 2.7 String limits row)",
   "message": {
     "t": "error",
     "code": 2,
