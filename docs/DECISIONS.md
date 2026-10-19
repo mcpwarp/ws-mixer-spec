@@ -590,7 +590,7 @@ on the wire and the CLI's tolerant merge by name is the model for the controller
   `multi_service_unknown_service_non_mcp_404`.
   The "available from mcpwarp tunnel `<version>`" placeholder is filled in when mcpwarp-saas tags the release.
   See [`MCPWARP.md`](./MCPWARP.md#48-multi-service-routing).
-  Note (`D-2026-10-19-03`): the placeholder now reads "a future mcpwarp tunnel release (0.6.0 or later)".
+  Note (`D-2026-10-19-06`): the placeholder is filled: "mcpwarp tunnel 0.6.0".
 - **D-2026-10-18-03** — Multi-service controller profile and status vocabulary. `createServiceGroup(options)`
   with `configure({enabled, token, services: [{name, kind?, handler | target, targetTimeoutMs?}], url?,
   webSocket?})`, `stop()`, `dispose()`, `addService()`, `removeService()`, local `enable(name)`/`disable(name)`,
@@ -642,6 +642,7 @@ section records them as text. Sources: the ws-mixer-python v0.7.0 audit, ws-mixe
 2026-10-18) and its 0.11.3 plan, the `ws-mixer-mcpwarp` 0.1.1 audit (Rust), ws-mixer-go v0.9.1 (`f522835`) and
 the v0.10.0 review, and mcpwarp/cli v0.2.7 (`70a867a`). Anatoly approved the edge header change of
 `D-2026-10-18-02` in the mcpwarp-saas session, to be built after this release. Ships as spec `v0.7.1`.
+`D-2026-10-19-05` and `-06` ship as spec `v0.7.2`.
 
 - **D-2026-10-19-01** — Frames in flight. Two counters: `OVERLOADED` has its own, `n` = consecutive `OVERLOADED`
   replies on the connection, delay `min(1000 × 2^(n−1), 30000)` ms, reset by any non-`OVERLOADED` reply (a
@@ -710,6 +711,7 @@ the v0.10.0 review, and mcpwarp/cli v0.2.7 (`70a867a`). Anatoly approved the edg
   retry hints; JS 0.11.2 reported a same-burst close as `handshake` (§11 row 59). Changed: `MCPWARP.md` §4.4,
   §4.8 Trust gate, §5.9 (Timer clamp row); `CLIENT-SDK.md` Reconnect / backoff, Disconnect reason shape. See
   [`CLIENT-SDK.md`](./CLIENT-SDK.md).
+  Note (`D-2026-10-19-06`): the placeholder is filled: "mcpwarp tunnel 0.6.0".
 - **D-2026-10-19-04** — Implementation status, naming and deviations. §9 Go: the tunnel's token provider is
   `TunnelConfig.TokenSource` (an interface compared by `==`, like the socket factory) with the
   `TokenSourceFunc` adapter, and `ServiceGroupConfig.TokenSource` likewise; the §9.2 Go names are confirmed as
@@ -721,3 +723,34 @@ the v0.10.0 review, and mcpwarp/cli v0.2.7 (`70a867a`). Anatoly approved the edg
   fixed in v0.2.7, new informative row 61 (state vocabulary). Reason: every SDK session reported against v0.7.0
   or its v0.6.3 pin. Changed: `MCPWARP.md` §9, §9.2, §11. See
   [`MCPWARP.md`](./MCPWARP.md#11-deviations-from-sdk-heads).
+- **D-2026-10-19-05** — Rulings after the `v0.7.1` tag. A scheduled transient re-send (§3.2 Transient retry)
+  counts as queued: a `connecting` group whose re-send empties while any name still has a pending transient
+  re-send stays `connecting`/`RETRYING` (G3) until that re-send is answered; G1's "nothing to send → `online`"
+  applies only with nothing outstanding, queued or scheduled. A name removed or locally disabled and then
+  re-added or re-enabled within the same `OVERLOADED` pause folds into the re-send, and its owed `unregister` is
+  cancelled; it takes its place among the folded-in names in trigger order, after the dropped frame's remaining
+  names, and does not return to its original slot. The transient counter resets on a `registered` with at least
+  one non-transient entry — a success, a `SERVER_DISABLED` entry or any refusal such as `CONFLICT` — or an
+  `unregistered`; a whole-frame `error` op leaves it unchanged and resets only the `OVERLOADED` counter. During
+  an `OVERLOADED` pause, in both profiles, an `error` op or an empty `registered` answers nothing (the dropped
+  frame is not on the wire). Single-service, as §6A.2's "may hold": `close()` skips its `unregister` only when
+  every `register` this connection sent was dropped by `OVERLOADED` (none is outstanding) and no `registered`
+  ever arrived on it; a `register` answered by a whole-frame `error` op or by an empty reply still gets an
+  `unregister`; a `registered` naming the service received during an `OVERLOADED` pause settles the handle and
+  cancels the re-send. Reason: the emptied re-send and the remove-then-add rulings came from the Go v0.10.0
+  review; the counter examples follow Python's fix of its transient counter (the text already said so and only
+  gains the examples); the single-service sentences came from the JS 0.11.3 review and match the multi-service
+  "may hold". Changed: `MCPWARP.md` §2.6 (One in flight, `OVERLOADED` re-send), §3.2 (Transient retry,
+  Unregister), §5.7 step 2, §6A.6 Emptied re-send, §6A.7 (One in flight, Correlation, Backoff counter). See
+  [`MCPWARP.md`](./MCPWARP.md#26-errorcode).
+- **D-2026-10-19-06** — Tunnel header release and implementation status. mcpwarp tunnel 0.6.0 (mcpwarp-saas
+  `932c765`, built against §4.8 at `v0.7.1`) is the release that adds and strips
+  `X-Mcpwarp-Server-Id` and `X-Mcpwarp-Server-Name`: the strip is case-insensitive over every spelling of both
+  names and also covers a chunked request's declared trailers; both are set once, at the pod holding the route,
+  from the service record. §4.8's placeholder now reads "mcpwarp tunnel 0.6.0". Implementation status:
+  ws-mixer-js v0.11.3 (`fbcc862`) fixes §11 rows 54–59; ws-mixer-go v0.10.0 (`4f87e0d`, `spec.pin` `v0.7.1`)
+  ships §9.2 as written plus the Go-only `ServiceGroupOptions.Metrics` and `(*ServiceGroup).Client()`, which
+  §1 allows; ws-mixer-python is green on `v0.7.1` (unreleased); Rust `ws-mixer-mcpwarp` 0.1.1 is in progress;
+  mcpwarp/cli v0.2.5 fixed §11 row 51. Reason: mcpwarp-saas built the approved header change as tunnel 0.6.0, and
+  the SDK sessions reported against `v0.7.1`. Changed: `MCPWARP.md` header, §4.8 (Edge headers, Trust gate),
+  §9.2, §11 (rows 49–51 paragraph, rows 51 and 54–59). See [`MCPWARP.md`](./MCPWARP.md#48-multi-service-routing).
