@@ -1,0 +1,36 @@
+{
+  "description": "Tells the two counters apart (MCPWARP.md §2.6 OVERLOADED re-send, §3.2 Transient retry, §6A.7 Backoff counter): the first registered is all-transient (alpha INTERNAL, beta TIMEOUT), so the group goes connecting + RETRYING (G3), the names stay pending and the transient counter's first re-send waits 1000 ms. That re-send is dropped by OVERLOADED: the OVERLOADED counter is its own, so this first OVERLOADED backs off 1000 ms (n = 1) whatever the transient streak, and a second consecutive one 2000 ms (n = 2). A shared counter would give 2000 and 4000. The third send is answered with both names in services[] and the group goes online.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "stdio" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "registered": { "services": [], "errors": [
+      { "name": "alpha", "code": "INTERNAL", "message": "resolve deadline exceeded" },
+      { "name": "beta", "code": "TIMEOUT", "message": "rpc timeout" }
+    ] } },
+    { "retry": { "delayMs": 1000, "cause": "register" } },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "app_error": { "code": "OVERLOADED", "message": "too many concurrent app messages, try again" } },
+    { "retry": { "delayMs": 1000, "cause": "overloaded" } },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "app_error": { "code": "OVERLOADED", "message": "too many concurrent app messages, try again" } },
+    { "retry": { "delayMs": 2000, "cause": "overloaded" } },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "registered": { "services": [
+      { "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true },
+      { "name": "beta", "url": "https://beta-tester.mcpwarp.test/mcp", "id": "srv_beta", "created": true }
+    ], "errors": [] } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" } } },
+    { "state": "connecting", "code": "RETRYING", "lastError": "mcpwarp couldn't register the service; retrying.", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" }
+    } }
+  ],
+  "expectDials": 1
+}

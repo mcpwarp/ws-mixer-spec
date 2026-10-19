@@ -1,5 +1,5 @@
 {
-  "description": "Non-fatal app errors (CONNECTION_LIMIT, UNKNOWN_OP) leave an online status alone; close 4014 APPLICATION_CLOSE is a non-fatal loss (DISCONNECTED); a non-fatal app error while reconnecting is connecting + INTERNAL until the registration lands.",
+  "description": "Non-fatal app errors (CONNECTION_LIMIT, UNKNOWN_OP) leave an online status alone; close 4014 APPLICATION_CLOSE is a non-fatal loss (DISCONNECTED); a non-fatal app error while reconnecting is connecting + INTERNAL until the registration lands (the single-service handle accepts a registered naming its service with no frame outstanding, §2.7; the UNKNOWN_OP answered the register, §6.7 T25).",
   "config": { "enabled": true, "token": "t", "name": "notes" },
   "events": [
     { "configure": {} },

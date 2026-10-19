@@ -1,0 +1,46 @@
+{
+  "description": "OVERLOADED reserves the in-flight slot (MCPWARP.md §2.6 One in flight and OVERLOADED re-send rows, §6A.7): the first register for alpha and beta is dropped, the group goes connecting + RETRYING (G3) and the names stay pending. addService(gamma) during the 1000 ms pause sends no second frame: the frame is re-queued, not released, and gamma is folded into the one re-send, a register for alpha, beta and gamma. Its registered answers all three, which resets the OVERLOADED counter, so a later OVERLOADED on removeService(alpha)'s unregister backs off 1000 ms again (n = 1) and re-sends that unregister; while online the group is unchanged (G4) and alpha shows unregistered until its unregistered.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "stdio" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "app_error": { "code": "OVERLOADED", "message": "too many concurrent app messages, try again" } },
+    { "add_service": { "name": "gamma", "kind": "http" } },
+    { "retry": { "delayMs": 1000, "cause": "overloaded" } },
+    { "sent": { "op": "register", "names": ["alpha", "beta", "gamma"] } },
+    { "registered": { "services": [
+      { "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true },
+      { "name": "beta", "url": "https://beta-tester.mcpwarp.test/mcp", "id": "srv_beta", "created": true },
+      { "name": "gamma", "url": "https://gamma-tester.mcpwarp.test/mcp", "id": "srv_gamma", "created": true }
+    ], "errors": [] } },
+    { "remove_service": { "name": "alpha" } },
+    { "sent": { "op": "unregister", "names": ["alpha"] } },
+    { "app_error": { "code": "OVERLOADED", "message": "too many concurrent app messages, try again" } },
+    { "retry": { "delayMs": 1000, "cause": "overloaded" } },
+    { "sent": { "op": "unregister", "names": ["alpha"] } },
+    { "unregistered": { "services": [{ "name": "alpha", "id": "srv_alpha" }] } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" } } },
+    { "state": "connecting", "code": "RETRYING", "lastError": "mcpwarp couldn't register the service; retrying.", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" } } },
+    { "state": "connecting", "code": "RETRYING", "lastError": "mcpwarp couldn't register the service; retrying.", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" }, "gamma": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "unregistered", "id": "srv_alpha" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" }
+    } }
+  ],
+  "expectDials": 1
+}

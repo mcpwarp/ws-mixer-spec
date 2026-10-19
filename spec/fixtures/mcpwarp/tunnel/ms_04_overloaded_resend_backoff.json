@@ -1,5 +1,5 @@
 {
-  "description": "OVERLOADED drops the outstanding frame unanswered (MCPWARP.md §2.6, §6A.7): with one frame in flight it is the register for gamma, which the controller re-sends after min(1000 × 2^n, 30000) ms: 1000, then 2000 for a second consecutive OVERLOADED. A registered with a services[] entry resets the counter, so the next OVERLOADED (for delta) backs off 1000 again. While online the group and the other services are unchanged (G4); the dropped service stays pending until its registered.",
+  "description": "OVERLOADED drops the outstanding frame unanswered (MCPWARP.md §2.6, §6A.7): with one frame in flight it is the register for gamma, which the controller re-sends after min(1000 × 2^(n−1), 30000) ms: 1000, then 2000 for a second consecutive OVERLOADED. Its registered resets the OVERLOADED counter (any non-OVERLOADED reply does, §2.6), so the next OVERLOADED (for delta) backs off 1000 again. While online the group and the other services are unchanged (G4); the dropped service stays pending until its registered.",
   "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "http" }] },
   "events": [
     { "configure": {} },

@@ -1,0 +1,54 @@
+{
+  "description": "A re-send with no names left is not sent (MCPWARP.md §2.6 One in flight, §6A.7 One in flight): alpha and beta go online, then enableService(alpha) re-registers alpha alone (pending) and that register is dropped by OVERLOADED; the group stays online (G4). removeService(alpha) during the 1000 ms pause leaves alpha out of the re-send, so when the retry fires the re-send has no names: no register goes out and the slot is freed. alpha was held (its services[] entry), so its unregister is the next frame, and its unregistered removes it. A later addService(gamma) sends a fresh register for gamma alone, which is answered and gamma goes active.",
+  "config": { "enabled": true, "token": "t", "services": [{ "name": "alpha", "kind": "http" }, { "name": "beta", "kind": "stdio" }] },
+  "events": [
+    { "configure": {} },
+    { "connected": {} },
+    { "welcome": {} },
+    { "sent": { "op": "register", "names": ["alpha", "beta"] } },
+    { "registered": { "services": [
+      { "name": "alpha", "url": "https://alpha-tester.mcpwarp.test/mcp", "id": "srv_alpha", "created": true },
+      { "name": "beta", "url": "https://beta-tester.mcpwarp.test/mcp", "id": "srv_beta", "created": true }
+    ], "errors": [] } },
+    { "enable_service": { "name": "alpha" } },
+    { "sent": { "op": "register", "names": ["alpha"] } },
+    { "app_error": { "code": "OVERLOADED", "message": "too many concurrent app messages, try again" } },
+    { "remove_service": { "name": "alpha" } },
+    { "retry": { "delayMs": 1000, "cause": "overloaded" } },
+    { "sent": { "op": "unregister", "names": ["alpha"] } },
+    { "unregistered": { "services": [{ "name": "alpha", "id": "srv_alpha" }] } },
+    { "add_service": { "name": "gamma", "kind": "http" } },
+    { "sent": { "op": "register", "names": ["gamma"] } },
+    { "registered": { "services": [
+      { "name": "gamma", "url": "https://gamma-tester.mcpwarp.test/mcp", "id": "srv_gamma", "created": true }
+    ], "errors": [] } }
+  ],
+  "expect": [
+    { "state": "off", "services": {} },
+    { "state": "connecting", "services": { "alpha": { "state": "pending" }, "beta": { "state": "pending" } } },
+    { "state": "online", "services": {
+      "alpha": { "state": "active", "id": "srv_alpha", "url": "https://alpha-tester.mcpwarp.test/mcp" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "pending", "id": "srv_alpha" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "alpha": { "state": "unregistered", "id": "srv_alpha" },
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" }
+    } },
+    { "state": "online", "services": {
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "pending" }
+    } },
+    { "state": "online", "services": {
+      "beta": { "state": "active", "id": "srv_beta", "url": "https://beta-tester.mcpwarp.test/mcp" },
+      "gamma": { "state": "active", "id": "srv_gamma", "url": "https://gamma-tester.mcpwarp.test/mcp" }
+    } }
+  ],
+  "expectDials": 1
+}

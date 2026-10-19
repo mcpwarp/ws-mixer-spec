@@ -8,8 +8,8 @@ carrier, WIRE.md wins. The ws-mixer core stays free of mcpwarp types ([`OVERVIEW
 document is a layer above it, not part of it ([`D-2026-10-14-01`](./DECISIONS.md#2026-10-14)).
 
 Written to the **intended ws-mixer-js 0.11.0 behaviour**. Every point where ws-mixer-js HEAD (`d45d3b4`,
-`SDK_VERSION` `"0.10.1"`) behaves differently is listed in §11; ws-mixer-js 0.11.0 implements v0.6.1; §11
-rows 18–19 are pending in 0.11.x. Rows 20 onward (v0.6.3) list deviations of every SDK, each row naming it. `d45d3b4` is the HEAD reviewed for v0.6.0; rows 18–19 were found later
+`SDK_VERSION` `"0.10.1"`) behaves differently is listed in §11; ws-mixer-js 0.11.0 implements v0.6.1; 0.11.1
+fixes §11 rows 18–19, 0.11.2 most later JS rows, and the JS rows still open are planned for 0.11.3. Rows 20 onward (v0.6.3) list deviations of every SDK, each row naming it. `d45d3b4` is the HEAD reviewed for v0.6.0; rows 18–19 were found later
 against `467bd5f` (ws-mixer-js 0.11.0), which is their baseline.
 
 v0.7.0 adds the **multi-service profile** ([`D-2026-10-18-01`](./DECISIONS.md#2026-10-18)…`-04`): one connection
@@ -133,7 +133,7 @@ changes:
 | Rule | Detail |
 |---|---|
 | One reply per frame | Each `registered` answers exactly one `register` and lists exactly that frame's entries, each in `services[]` (`{name, id, url, created}`) or in `errors[]` (`{name, code, message, id?}`). Partial success is normal. Replies are correlated with frames by order on one connection, which one in flight makes unambiguous (§2.6). |
-| Empty reply | A `registered` that lists none of the frame's names — including one with no `services` and no `errors` — answers the outstanding `register`: it frees the in-flight slot (§2.6) and counts as an all-transient reply. Every unlisted name stays `pending` (§6A.5) and the frame is re-sent for those names after the shared backoff `min(1000 × 2^(n−1), 30000)` ms (§3.2 Transient retry), the same as any transient entry; nothing waits for the next `welcome` (§6A.7 Correlation). For a single-service agent such a reply changes no handle state. |
+| Empty reply | A `registered` that lists none of the frame's names — including one with no `services` and no `errors` — answers the outstanding `register`: it frees the in-flight slot and resets the `OVERLOADED` counter (§2.6), and counts as an all-transient reply. Every unlisted name stays `pending` (§6A.5) and the frame is re-sent for those names after §3.2's transient backoff `min(1000 × 2^(n−1), 30000)` ms (§3.2 Transient retry), the same as any transient entry; nothing waits for the next `welcome` (§6A.7 Correlation). For a single-service agent such a reply changes no handle state and is re-sent after §3.2's transient backoff. Informative: the deployed edge never sends such a reply today. |
 | Additive | A later `register` on a live connection affects only its own names; nothing already held is removed. |
 | `errors[].id` | Present only on `SERVER_DISABLED`. |
 | `unregistered` | `{v, op, services: [{name, id}]}`, never `errors`. A name the connection does not hold is skipped silently and absent from the reply; names not listed in the `unregister` stay live. |
@@ -182,7 +182,7 @@ unknown code means the edge speaks something newer, so the controller MUST NOT w
 | `UNSUPPORTED_VERSION` | `v` not supported | **fatal** |
 | `OVERLOADED` | too many `app` messages in flight (> 256) | if a `register` or `unregister` is outstanding: re-send it after `min(1000 × 2^(n−1), 30000)` ms, if still connected, for every consecutive `OVERLOADED` (Frames in flight below, `OVERLOADED` re-send row); `onRetry` fires for a `register` re-send (§5.9) |
 | `CONNECTION_LIMIT` | too many connections per owner and pod (> 10, counted per pod, not cluster-wide); the edge then closes with `APPLICATION_CLOSE`, WS close **4014** with a reason starting `CONNECTION_LIMIT:` (never `4009`, WIRE.md §2.8) | non-fatal `error` event |
-| `TOO_MANY_SERVICES` | too many entries in `services[]`: a **whole-frame** error — the edge rejects the entire `register` and sends no `registered` reply, not a per-service `errors[]` entry. An edge sends it for a message with more than 100 entries, never for 1..100 (§2.1 Batch) | non-fatal `error` event; a multi-service controller marks the outstanding frame's names `rejected` (§6A.6 G7) |
+| `TOO_MANY_SERVICES` | too many entries in `services[]`: a **whole-frame** error — the edge rejects the entire `register` and sends no `registered` reply, not a per-service `errors[]` entry. An edge sends it for a message with more than 100 entries, never for 1..100 (§2.1 Batch) | non-fatal `error` event; it answers the outstanding frame (One in flight below): a single-service agent re-sends nothing (§6.7 T25), a multi-service controller marks the frame's names `rejected` (§6A.6 G7) |
 | `UNKNOWN_OP` | unknown `op` | non-fatal `error` event |
 | `BAD_REQUEST` | malformed envelope | non-fatal `error` event |
 | any unknown code | — | non-fatal `error` event |
@@ -191,8 +191,8 @@ unknown code means the edge speaks something newer, so the controller MUST NOT w
 
 | Rule | Detail |
 |---|---|
-| One in flight | An agent MUST keep at most **one** `register`/`unregister` outstanding per connection. It sends the next only after the outstanding one was answered (`registered` / `unregistered`), answered by a whole-frame `error` op (`TOO_MANY_SERVICES`, `UNKNOWN_OP`, `BAD_REQUEST`, unknown), or its connection ended. `OVERLOADED` and the other `error` ops name no frame; one in flight makes the outstanding frame the one they answer. An agent MAY instead treat `OVERLOADED` as "re-send every unanswered frame"; the spec recommends one in flight. |
-| `OVERLOADED` re-send | Per-pod backpressure (256 in-flight app messages per pod, shared by every connection on it; informative): the frame was **dropped unprocessed** and no reply follows. Every agent, single- or multi-service, MUST re-send the dropped frame (`register` or `unregister`) after `min(1000 × 2^(n−1), 30000)` ms (1 s, 2 s, 4 s … capped 30 s), where `n` is the number of consecutive `OVERLOADED` (or all-transient) replies since the last successful reply, this one included (§3.2's counter). The counter resets on any successful reply: a `registered` with at least one non-transient entry, or an `unregistered`. Not terminal; there is no "re-send once". |
+| One in flight | An agent MUST keep at most **one** `register`/`unregister` outstanding per connection. It sends the next only after the outstanding one was answered (`registered` / `unregistered`), answered by a whole-frame `error` op with any code other than `OVERLOADED` and `CONNECTION_LIMIT` (e.g. `TOO_MANY_SERVICES`, `UNKNOWN_OP`, `BAD_REQUEST`, unknown codes included), or its connection ended. `OVERLOADED` and the other whole-frame `error` ops name no frame; one in flight makes the outstanding frame the one they answer. `CONNECTION_LIMIT` answers no frame: the edge's `4014` close follows, and the connection's end frees the slot. An agent MAY instead treat `OVERLOADED` as "re-send every unanswered frame"; the spec recommends one in flight. The rule applies in normal operation: a trigger (`enable`, a subset add or remove, a re-register) arriving while a frame is outstanding queues until the reply, and a `register` MUST NOT be sent while a frame is outstanding; only `close()` MAY send its `unregister` while a `register` is outstanding (§3.2 Unregister). After `OVERLOADED` the slot stays **reserved** for the scheduled re-send: the frame is re-queued, not released. A `register` trigger arriving during the pause (an `enable`, a subset add, a re-register) folds into the re-send of a dropped `register`, within 100 names (§2.1 Batch), the dropped frame's names first in their order and then the folded-in names in trigger order; a name removed or locally disabled during the pause is left out of the re-send, and if the connection may hold it an `unregister` for it queues behind the re-send. A re-send with no names left (every name of the dropped frame removed or locally disabled during the pause and nothing folded in) is not sent; the slot is freed (status per §6A.6). Any other trigger queues behind the re-send (§6A.7). No second frame goes out. Any reply that settles the outstanding frame MUST cancel every pending re-send timer for it. A whole-frame `error` op that answers the frame frees the slot and resets the `OVERLOADED` counter; `UNSUPPORTED_VERSION` is then fatal (§6.7 T24). Single-service: §6.7 T25; the handle stays `registering`, nothing is re-sent, and the next `welcome` or `enable` registers again; multi-service: G7 (the frame's names `rejected`). |
+| `OVERLOADED` re-send | Per-pod backpressure (256 in-flight app messages per pod, shared by every connection on it; informative): the frame was **dropped unprocessed** and no reply follows. Every agent, single- or multi-service, MUST re-send the dropped frame (`register` or `unregister`) after `min(1000 × 2^(n−1), 30000)` ms (1 s, 2 s, 4 s … capped 30 s), where `n` is the number of consecutive `OVERLOADED` replies on this connection, this one included. This counter is its own: it resets on any non-`OVERLOADED` reply (a `registered`, an `unregistered`, or a whole-frame `error` op answering the frame). Transient refusals use §3.2's separate register backoff (§3.2 Transient retry). Not terminal; there is no "re-send once". |
 | Resolve deadline | Informative: the edge resolves a batch's entries one after another under one deadline (the edge's resolve timeout plus 1 s), so tail entries of a large batch MAY fail `INTERNAL`. `INTERNAL` is transient (§2.5): the agent re-sends those names after the backoff (§3.2 Transient per name). |
 
 ### 2.7 Inbound acceptance
@@ -201,10 +201,10 @@ Agent states (§5.5): `connecting`, `registering`, `registered`, `disabled`, `co
 
 | Op | Accepted in | Match | Effect |
 |---|---|---|---|
-| `registered` | any except `closing`, `closed`, `conflict` | `services[]` / `errors[]` entry whose `name` equals the agent's | `services` entry → state `registered`, url/id/created updated, backoff counter reset; `errors` entry → §2.5 |
-| `unregistered` | `closing`, while an `unregister` is outstanding | any `unregistered`, or one naming the agent's service | ends the close wait (§5.7) |
+| `registered` | any except `closed`, `conflict` (in `closing`: settles only, see Effect) | `services[]` / `errors[]` entry whose `name` equals the agent's | `services` entry → state `registered`, url/id/created updated, transient backoff counter reset (§3.2); `errors` entry → §2.5; either resets the `OVERLOADED` counter (§2.6). In `closing` it changes no state, but a `registered` answering an outstanding `register` still settles that frame (§3.2 Unregister). |
+| `unregistered` | `closing`, while an `unregister` is outstanding | any `unregistered`, or one naming the agent's service | ends the close wait (§5.7); so does a whole-frame `error` op whose turn it is, i.e. no earlier frame outstanding (§3.2 Unregister) |
 | `disable` | any except `closing`, `closed`, `conflict` | `id` equals the agent's server id; an unknown `id` is **held** (below) | state `disabled`, `disabled` event |
-| `enable` | any except `closing`, `closed`, `conflict` | `name` equals the agent's, or `id` equals the agent's server id; `id` then adopted | `enabled` event, state `registering`, `register` sent (if disconnected, the next `welcome` sends it) |
+| `enable` | any except `closing`, `closed`, `conflict` | `name` equals the agent's, or `id` equals the agent's server id; `id` then adopted | `enabled` event, state `registering`, `register` sent: queued behind an outstanding frame, or folded into a pending `OVERLOADED` re-send (§2.6 One in flight); if disconnected, the next `welcome` sends it |
 | `conflict` | any except `closing`, `closed`; once per agent lifetime | `name` equals the agent's **or** `id` equals the agent's server id | §3.3 |
 | `error` | any while connected | — | §2.6 |
 
@@ -212,8 +212,8 @@ Agent states (§5.5): `connecting`, `registering`, `registered`, `disabled`, `co
 |---|---|
 | Superseded connection | **Every** mcpwarp op arriving on a superseded connection — a drained connection once its replacement has received `welcome` (§5.9) — is ignored in every state, `error` ops included: no state change, no event, no `register` sent, so the tunnel controller never sees it (§6.8 Drain, T38). |
 | Ended connection | A `registered`, `disable` or `enable` received on a connection that has since ended — queued `app` messages delivered after the disconnect ([CLIENT-SDK.md](./CLIENT-SDK.md)'s Handler delivery row) — MUST be ignored. `conflict` and `error` from that connection are still applied: `conflict` is sticky and an `error` code may be fatal. A superseded connection's ops stay ignored (row above, T38), its `conflict` and `error` included. Tunnel fixture `44_stale_disable_after_disconnect_ignored` assumes exactly this ordering: ops the connection received before it ended, delivered to the layer after the disconnect notification (§10.4 `flush_after`); a runner that cannot force post-disconnect delivery MUST skip 44 with a note in its run output; the fixture carries `runnerRequirement` `"post-disconnect-delivery"` (`spec/fixtures/mcpwarp/tunnel/README.md`). |
-| Unknown `disable` id | A `disable` whose `id` the handle does not know — including one before any `registered` — is **held**, not adopted: the edge fans `disable` out to every connection of the owner, so an unknown id may belong to another service. When a later `registered` brings that id, the held `disable` applies (state `disabled`, `disabled` event); a held id that never arrives changes nothing. Tunnel fixture `42_disable_unknown_id_held`. |
-| Held `disable` lifetime | [`D-2026-10-18-01`](./DECISIONS.md#2026-10-18). A hold belongs to the connection that received the `disable`. It is cleared by a matching `enable`, by a take-over of that name (`conflict`, `drain{replaced}`), or when the connection ends. It never survives a reconnect: the new connection needs none, since the edge answers each re-register of a disabled service with `errors[]` `SERVER_DISABLED` carrying its `id` (§2.5). |
+| Unknown `disable` id | A `disable` whose `id` the handle does not know — including one before any `registered` — is **held**, not adopted: the edge fans `disable` out to every connection of the owner, so an unknown id may belong to another service. When a later `registered` brings that id, the registration **is** recorded — the handle learns url and id and emits `registered` — and the held `disable` then applies (state `disabled`, `disabled` event), back to back; the tunnel collapses the pair into one `disabled`/`DISABLED` snapshot (§5.9 Held `disable`, §6.7 T50). A held id that never arrives changes nothing. Tunnel fixture `42_disable_unknown_id_held`. |
+| Held `disable` lifetime | [`D-2026-10-18-01`](./DECISIONS.md#2026-10-18), [`D-2026-10-19-02`](./DECISIONS.md#2026-10-19). A hold belongs to the connection that received the `disable`. It is cleared by a matching `enable` (by `name` or `id`), by a take-over of that name (`conflict`, `drain{replaced}`), by a replacement connection's `welcome` (drain hand-over), or when the connection ends. It never survives a reconnect: the new connection needs none, since the edge answers each re-register of a disabled service with `errors[]` `SERVER_DISABLED` carrying its `id` (§2.5). |
 
 **Op shapes the deployed edge sends** (informative; the schema stays as §2.3):
 
@@ -231,11 +231,11 @@ Superseded connection and Ended connection rows per connection unchanged, and ma
 | Op | Match | Effect |
 |---|---|---|
 | `registered` | answers the outstanding `register`; each entry by `name` among the configured names | per entry: `services[]` → `active`, `id`/`url` adopted; `errors[]` → §2.5 per name: `SERVER_DISABLED` → `disabled`, its `id` adopted; transient → re-sent (§3.2 Transient per name); any other code → `rejected` |
-| `unregistered` | answers the outstanding `unregister` | ends it; the frame's names leave the controller's held set whether listed or absent |
+| `unregistered` | answers the outstanding `unregister` | ends it; the frame's names leave the controller's held set whether listed or absent; a whole-frame `error` op answering the `unregister` settles it the same way, logged `warn` |
 | `disable` | `id` among the ids this connection learned (`registered`, `SERVER_DISABLED.id`, `enable`) | that one service → `disabled`; others unchanged. An `id` this connection does not know is **held per connection** until a `registered` on this connection brings it (Unknown `disable` id row, per connection); a held id that never arrives changes nothing; the hold's lifetime is the Held `disable` lifetime row |
 | `enable` | `name` among the configured names, or `id` | that one service is registered again (`pending`), unless it is locally disabled or `taken_over`, which ignore it; an unconfigured name is ignored |
-| `conflict` | `name` (or `id`) of a service this connection holds | that name only → `taken_over`; the edge has already reset its streams; other names stay live; the agent MUST NOT register that name again until its `taken_over` mark is cleared (§6A.3). A `conflict` for a name this connection never held is ignored |
-| `error` | `OVERLOADED`, `TOO_MANY_SERVICES`: the outstanding frame (§2.6) | §2.6; other codes as §6A.6 |
+| `conflict` | `name` (or `id`) of a service this connection holds: this connection received a `services[]` entry for the name | that name only → `taken_over`; the edge has already reset its streams; other names stay live; the agent MUST NOT register that name again until its `taken_over` mark is cleared (§6A.3). A `conflict` for a name this connection never held is ignored (`ms_05_conflict_per_name`: a refused name), including a name only sent in an outstanding `register` (that `register`'s own reply says what happened) or known only through `SERVER_DISABLED.id` or `enable`. Informative: the agent MAY also reset that service's in-flight streams locally, in addition to the edge's reset |
+| `error` | `OVERLOADED`, and every code other than `CONNECTION_LIMIT` (e.g. `TOO_MANY_SERVICES`): the outstanding frame (§2.6 One in flight) | §2.6; other codes as §6A.6; one answering an outstanding `unregister` settles it like an `unregistered`: the frame's names leave the controller's held set, logged `warn` |
 
 ### 2.8 Decode rules
 
@@ -295,15 +295,16 @@ A header-less runtime (browser `WebSocket`, Electron renderer, Zotero) loses `Au
 |---|---|
 | Register on every `welcome` | An agent MUST send `register` after **every** `welcome`, including a drain replacement's, unless taken over (§3.3) or closing. |
 | Result | `registered` with a `services[]` entry for the agent's name: the service is live at `url`; `id` is the server id; `created` is `true` only when this `register` created it. |
-| Transient retry | On a transient code (§2.5) the agent re-sends `register` on the same connection after `min(1000 × 2^(n−1), 30000)` ms (1 s, 2 s, 4 s … capped 30 s), where `n` is the number of consecutive `OVERLOADED` (or all-transient) replies since the last successful reply, this one included (§2.6). `n` resets **only** on a successful reply — a `registered` with at least one non-transient entry, or an `unregistered` — so it carries across reconnects. A disconnect cancels a pending retry; the next `welcome` registers anyway. |
-| `OVERLOADED` | §2.6. |
-| Unregister | On `close()`, if this connection sent `register` and is still connected: send `unregister`, wait for `unregistered` (§2.7) or **2000 ms**, whichever first; a failed send ends the wait at once. Then close ws-mixer gracefully (`drain{client_requested}`, ≤ 5 s grace, close `1000`). No `unregister` after a take-over, or when `register` never went out on the live connection. |
+| Transient retry | On a transient code (§2.5) the agent re-sends `register` on the same connection after `min(1000 × 2^(n−1), 30000)` ms (1 s, 2 s, 4 s … capped 30 s), where `n` is the number of consecutive all-transient replies since the last successful reply, this one included. `n` resets **only** on a successful reply — a `registered` with at least one non-transient entry, or an `unregistered` — so it carries across reconnects (a restart through `configure()` or a `stop()` starts a new counter). After a reply that lists both transient and non-transient entries the counter is reset and the transient names' re-send waits the n = 1 delay (1000 ms). This register backoff is separate from the `OVERLOADED` counter (§2.6 `OVERLOADED` re-send). A disconnect cancels a pending retry; the next `welcome` registers anyway. |
+| `OVERLOADED` | §2.6: its own counter, and the slot stays reserved for the re-send (One in flight). |
+| One controller per connection | The profile assumes one controller owns a connection's mcpwarp ops: one in flight is per connection and replies correlate by frame order (§2.3), never by name; a host that multiplexes several controllers or handles on one connection MUST itself serialize their frames and route each reply to the controller whose frame it answers. A single-service handle, having one name, accepts a `registered` naming its service even when no frame is outstanding (§2.7 `registered` row); this is not matching by name across controllers. |
+| Unregister | On `close()`, if this connection sent `register` and is still connected: send `unregister`, wait for its reply (below) or **2000 ms**, whichever first; a failed send ends the wait at once. Then close ws-mixer gracefully (`drain{client_requested}`, ≤ 5 s grace, close `1000`). No `unregister` after a take-over, or when `register` never went out on the live connection. `close()` MAY send its `unregister` while a `register` is outstanding (the connection is ending). The wait ends on the reply to the `unregister` itself, by frame order (§2.3): an `unregistered`, or a whole-frame `error` op whose turn it is (no earlier frame outstanding), or the 2000 ms cap; a `registered` (or an `error` op) answering the earlier `register` settles that `register` and the wait continues. While `closing`, a `register` dropped by `OVERLOADED` is abandoned: the agent MUST NOT re-send it (a `register` sent while closing could re-hold the name); the `unregister` behind it stays outstanding (the edge drops one frame, not the queue). An `OVERLOADED` answering the `unregister` re-sends it after the pause if the 2000 ms budget allows; an early re-send of the `unregister` is tolerated, since duplicate `unregister`s are harmless (§2.3: names not held are silently absent). |
 | Disabled | `disable` or `SERVER_DISABLED` → state `disabled`; the agent keeps the connection and answers `/mcp` with `503` (§4.4). `enable` → `register` again. |
 | Re-register on every `welcome` (multi-service) | On every `welcome` the agent MUST register its **full configured list** minus the names it unregistered locally (removed, or locally disabled) and the names taken over (§3.3 Per name). Dashboard-disabled and refused names are included: the edge answers `SERVER_DISABLED` or the refusal again. Batches per §2.1, one frame in flight (§2.6). |
 | Same-session re-register | A `register` for a name this connection already holds is idempotent on the edge: the existing server is found again (`created: false`), the hold is replaced, no stream is reset and no `conflict` is sent. |
 | New session after a reconnect | A reconnect is a new session: the new connection's `register` takes over whatever the old connection still holds. If the old connection is still alive on the edge it receives `conflict{taken_over}` per name, which the agent ignores as superseded (§2.7 Superseded connection); if it is gone, the edge has already dropped its holds. |
 | Additive and subset | A later `register` adds only its names; an `unregister` removes only its names, the rest stay live (§2.3 Multi-service replies). |
-| Transient per name | A transient `errors[]` entry (§2.5) is retried **for that name alone**: the agent re-sends `register` for the transient-failed names of a reply after the Transient retry row's delay, with the same counter; the reply's other names keep their outcome. |
+| Transient per name | A transient `errors[]` entry (§2.5) is retried **for that name alone**: the agent re-sends `register` for the transient-failed names of a reply after the Transient retry row's delay, with that row's counter; the reply's other names keep their outcome. |
 
 ### 3.3 Conflict and take-over
 
@@ -315,7 +316,7 @@ A header-less runtime (browser `WebSocket`, Electron renderer, Zotero) loses `Au
 | Drain `replaced` | **Not sent by the deployed edge** (future-proofing, paragraph below). A ws-mixer `drain` with `reason:"replaced"` on the agent's connection MUST be treated as a take-over (`TAKEN_OVER`), never as a hand-over: the agent MUST NOT dial a replacement or reconnect, and closes its ws-mixer client (Sticky row's take-over close), so no later `welcome` arrives and it never registers again. The agent MUST abandon any replacement dial that has not yet completed its upgrade; a replacement that has already sent `hello` (the transport sends it in the same poll as the `101`) MUST be closed with `error{NO_ERROR}` + WS close `1000` before any `welcome` handling, MUST NOT be reported as connected and MUST NOT `register`; the edge MUST tolerate a `hello` followed by an immediate close. `onRetry` does not fire for the abandoned dial in either case. Before `expose()` settles it rejects `TAKEN_OVER` (§5.4); after, the handle enters `conflict` and emits the `conflict` event (§5.6), sticky for the rest of the agent's lifetime — the tunnel's T45 (§6.7), sticky until the next `configure()`. Accepted in the same states as `conflict` (§2.7); after a `conflict` it changes nothing, and a `conflict` after it changes nothing. Any other drain `reason` is an ordinary hand-over (§5.9, §6.7 T31, T43). |
 | Before first registration | `expose()` rejects with `TAKEN_OVER` (§5.4); no handle, no `conflict` event. |
 | Last values | `url`, server id and registration keep their last values (now the new holder's). |
-| Per name (multi-service) | A `register` from another session of the same owner for a name this connection holds takes over **that name only**: the edge resets this connection's streams for that server and sends `conflict{id, name, reason:"taken_over"}` (cross-pod: at the next presence heartbeat). The agent marks the name `taken_over` (§6A.5), RESETs any further inbound stream routed to it with `CANCEL` `"service taken over by another connection"` (§4.8), never sends `unregister` for it, and MUST NOT register it again — not on `welcome`, not on a dashboard `enable` — until its `taken_over` mark is cleared (§6A.3). Every other name stays live and the connection stays open. A draining connection hands its names over silently: no `conflict`, no stream reset. |
+| Per name (multi-service) | A `register` from another session of the same owner for a name this connection holds takes over **that name only**: the edge resets this connection's streams for that server and sends `conflict{id, name, reason:"taken_over"}` (cross-pod: at the next presence heartbeat). The agent marks the name `taken_over` (§6A.5), RESETs any further inbound stream routed to it with `CANCEL` `"service taken over by another connection"` (§4.8), never sends `unregister` for it, and MUST NOT register it again — not on `welcome`, not on a dashboard `enable` — until its `taken_over` mark is cleared (§6A.3). Every other name stays live and the connection stays open. "Holds" means this connection received a `services[]` entry for the name; a `conflict` for any other name is ignored (§2.7 multi-service `conflict` row). Informative: the agent MAY also reset that service's in-flight streams locally, in addition to the edge's reset. A draining connection hands its names over silently: no `conflict`, no stream reset. |
 | Whole-connection take-over (multi-service) | A `drain{replaced}` (never sent today, row Drain `replaced`) takes over every name of the connection: all services `taken_over`, the group `conflict`/`TAKEN_OVER`, sticky as in the Sticky row (§6A.6 G6). |
 
 Take-over is last-`register`-wins plus `conflict`, as above, and it is **per name**: the losing connection
@@ -468,7 +469,9 @@ Evaluated in this order; the first match answers. Rationale: never read a body t
 An agent MUST follow this order, so `404` beats `503` beats `413`. The fallback `503` applies only before the
 first successful registration on the handle; after it, `connecting` and `registering` — a reconnect, or a
 drain hand-over while the old connection still holds the route — keep serving (row 6). An edge MAY answer a disabled service's
-requests with `503` `{"error":"service disabled"}` itself.
+requests with `503` `{"error":"service disabled"}` itself. A single-service handle never selects by `Host`: every `/mcp`
+request reaching a registered handle goes to its handler (row 6), which answers `404` itself if it multiplexes
+internally; §4.8's selection exists only in the multi-service controller.
 
 **Ending a refused stream.** After writing any refusal the SDK generates — `404`, `503`, `413` or `500` —
 while request body bytes are still unread, the agent drains the rest of the body — reads and drops it,
@@ -550,8 +553,8 @@ the service per stream:
 | 2. Host label | Else take the `Host` value, drop any `:port`, lowercase it, and take its first label (up to the first `.`). Split it at its **last** `-`: the part before is the service name, the part after the username. Usernames match `^[a-z0-9]{3,20}$` (no `-`) and service names §2.4's `SERVICE_NAME_RE`, so the split is unambiguous. The agent MUST select the configured service with that name. A label with no `-`, or a part that does not match its grammar → no service selected. Example: `Host: my-notes-tester.tunnel.mcpwarp.test` → name `my-notes`, username `tester`. |
 | 3. Server name header | `X-Mcpwarp-Server-Name` MAY also be present and carries the service name. An agent MAY log it and MUST NOT route by it. |
 
-**Edge headers.** Both headers are OPTIONAL and edge-added (approved 2026-10-15; available from mcpwarp tunnel
-`<version>`, filled in when the mcpwarp-saas release is tagged):
+**Edge headers.** Both headers are OPTIONAL and edge-added (approved 2026-10-15; available from a future mcpwarp
+tunnel release (0.6.0 or later)):
 
 | Header | Value | Edge rule |
 |---|---|---|
@@ -564,7 +567,7 @@ An edge that adds either header MUST strip every client-supplied copy of it firs
 `false`; Go, Rust and Python names in §9.2) that enables step 1. An agent MUST NOT honour
 `X-Mcpwarp-Server-Id` or `X-Mcpwarp-Server-Name` (route by them or otherwise trust them as edge-set) unless the
 option is on; with it off, routing is by step 2. Operators turn it on once their edge is known to add and strip
-the headers: from mcpwarp tunnel `<version>`. An agent MUST work with or without the headers. The agent
+the headers: from a future mcpwarp tunnel release (0.6.0 or later); until then the option stays off. An agent MUST work with or without the headers. The agent
 forwards both to the application like any other header (§4.6). Informative: an edge that does not add them forwards a client's own `X-Mcpwarp-Server-Id` unchanged, so an
 agent that honoured it would let any client steer a request to another service of the same connection.
 
@@ -645,7 +648,7 @@ permitting) `Authorization`, `User-Agent`, `X-Mcpwarp-Integration`.
 | First of | Result |
 |---|---|
 | `registered` for the agent's name | resolve with the handle (state `registered`) |
-| `disable` or `SERVER_DISABLED` | resolve with the handle (state `disabled`, `registration` absent) |
+| `disable` or `SERVER_DISABLED` | resolve with the handle (state `disabled`). `registration` is absent after a `SERVER_DISABLED` refusal or a `disable` that applies before any `registered`; a held `disable` applied by a later `registered` (§2.7 Unknown `disable` id, §5.9 Held `disable`) applies after that registration is recorded, so `registration` is present |
 | non-transient register refusal (§2.5) | reject `McpwarpError{code: <register code>, message: <server message>, fatal: true}` |
 | `error{UNSUPPORTED_VERSION}` | reject `UNSUPPORTED_VERSION` |
 | token rejected: close `4011`, or HTTP `401` reported by the factory | reject `UNAUTHORIZED`, `cause` = the transport error |
@@ -696,8 +699,9 @@ listener is dropped.
    take-over has already started closing the connection immediately (§6.8 Take-over close), so there is
    nothing to unregister or drain. Its result waits for no `unregistered` and no drain grace, only for that
    take-over close to complete (tunnel fixture `45_dispose_in_conflict_immediate`). The graceful steps below apply in every other state.
-2. If this connection sent `register` and is connected: `unregister`, wait for `unregistered` or 2000 ms (§3.2).
-   Never rejects.
+2. If this connection sent `register` and is connected: `unregister`, wait for its reply or 2000 ms (§3.2 Unregister).
+   The `unregister` MAY go out while a `register` is outstanding; the wait ends on the `unregister`'s own reply by
+   frame order, a whole-frame `error` op included, or the cap (§3.2 Unregister). Never rejects.
 3. Close the ws-mixer client gracefully; errors swallowed.
 4. State `closed`, `close {}` emitted.
 
@@ -718,9 +722,10 @@ Abort before settle: the client is closed and `expose()` rejects with `signal.re
 | Disconnect | Same rule as the tunnel's (§6.8 Drain, T38, T44). The end of a drained connection is ignored only once its replacement has received `welcome`, including while the replacement is still registering: the state does not change. Before that (replacement dial pending or failing) it is an ordinary lost connection: state `connecting`, the replacement's dial being the pending reconnect. Any other connection's end → `connecting`. Decide by connection identity, never by the handle's state; `conflict` stays `conflict` (§3.3). A non-fatal `disconnect` is emitted in every case. |
 | Superseded messages | Once the replacement has received `welcome`, every mcpwarp op arriving on the drained connection — `registered`, `disable`, `enable`, `conflict` and `error` — is ignored by the handle (§2.7): no state change, no event, no `register` sent, so the tunnel never sees them (§6.8 Drain, T38). |
 | Ended connection | `registered`, `disable` and `enable` delivered after their connection ended are ignored; `conflict` and `error` still apply (§2.7 Ended connection). |
-| Held `disable` | When a later `registered` brings a held `disable`'s id (§2.7 Unknown `disable` id), the handle emits `registered` then `disabled`, back to back, state ending `disabled`. The tunnel collapses the pair into one `disabled`/`DISABLED` snapshot, no `online` in between (§6.7 T50). Holds die with their connection, so a reconnect starts with none (§2.7 Held `disable` lifetime). |
+| Held `disable` | When a later `registered` brings a held `disable`'s id (§2.7 Unknown `disable` id), the handle records the registration (url, id) and emits `registered` then `disabled`, back to back, state ending `disabled`. The tunnel collapses the pair into one `disabled`/`DISABLED` snapshot, no `online` in between (§6.7 T50). Holds die with their connection, so a reconnect starts with none, and a drain replacement's `welcome` clears the drained connection's holds (§2.7 Held `disable` lifetime). |
 | `onRetry` | MUST fire **before every** scheduled reconnect and every `register` retry — including zero-delay redials, drain-caused redials, the token-refresh redial and `OVERLOADED` re-sends — with `{attempt, delayMs, reason}`. `reason` is the transport's disconnect cause for a redial, `"register failed: <CODE>: <message>"` for a transient register retry, `"register failed: OVERLOADED: <message>"` for an `OVERLOADED` re-send. |
-| `onRetry` special cases | **`OVERLOADED` re-send**: `attempt` is `1` for the first re-send after the refusal and increments on each consecutive re-send (`delayMs` = `min(1000 × 2^(n−1), 30000)`, `n` per §2.6); a successful reply resets it (§2.6). **Drain replacement dial** (a hand-over, not a failure): `{attempt: 0, delayMs: <delay>, reason: "drain"}`, where `delayMs` is the actual delay before the replacement dial, whichever produced it: WIRE.md §2.9's `0–2000 ms` drain jitter, or the drain's `retry_after_ms` plus any jitter on top (WIRE.md §2.9 Client side of a drain; tunnel fixture `41_drain_retry_after_honoured`); the client's own backoff counter is not consulted. **Token-refresh redial** (the one immediate redial after a rejected token, [CLIENT-SDK.md](./CLIENT-SDK.md)'s Rejected token row): it is a scheduled reconnect, so `onRetry` fires with exactly `{attempt: 1, delayMs: 0, reason: "token-refresh"}`. The rejection before it (`401` at the upgrade or `4011` before `welcome`) is reported first as a non-fatal `disconnect` like any other (`phase` `dial` or `handshake`, `fatal: false`); the order is `disconnect`, `onRetry`, redial (§11 row 53). **Take-over**: `onRetry` does not fire for a replacement dial that `drain{replaced}` abandons (no retry is scheduled, §3.3). |
+| `onRetry` special cases | **`OVERLOADED` re-send**: `attempt` is `1` for the first re-send after the refusal and increments on each consecutive re-send (`delayMs` = `min(1000 × 2^(n−1), 30000)`, `n` per §2.6); any non-`OVERLOADED` reply resets it (§2.6). **Drain replacement dial** (a hand-over, not a failure): `{attempt: 0, delayMs: <delay>, reason: "drain"}`, where `delayMs` is the actual delay before the replacement dial, whichever produced it: WIRE.md §2.9's `0–2000 ms` drain jitter, or the drain's `retry_after_ms` plus any jitter on top (WIRE.md §2.9 Client side of a drain; tunnel fixture `41_drain_retry_after_honoured`); the client's own backoff counter is not consulted. **Token-refresh redial** (the one immediate redial after a rejected token, [CLIENT-SDK.md](./CLIENT-SDK.md)'s Rejected token row): it is a scheduled reconnect, so `onRetry` fires with exactly `{attempt: 1, delayMs: 0, reason: "token-refresh"}`. The rejection before it (`401` at the upgrade or `4011` before `welcome`) is reported first as a non-fatal `disconnect` like any other (`phase` `dial` or `handshake`, `fatal: false`); the order is `disconnect`, `onRetry`, redial (§11 row 53). **Take-over**: `onRetry` does not fire for a replacement dial that `drain{replaced}` abandons (no retry is scheduled, §3.3). |
+| Timer clamp | Informative: an SDK MAY clamp any computed delay (backoff, `drain.retry_after_ms`, `Retry-After`) to its runtime's timer maximum (JS and Python clamp at 2^31−1 ms). |
 
 ---
 
@@ -869,7 +874,7 @@ code takes its `lastError` from §6.6.
 | T10 | `conn/*` | `connected`, `welcome` | unchanged | | `register` sent |
 | T11 | live | `registered` | `online` | — | `url` = registered url; unless a held `disable` matches the new id (T50) |
 | T12 | `conn/*`, `online`, `disabled` | `disabled` for the agent's server id, or `register_error{SERVER_DISABLED}` | `disabled` | `DISABLED` | from `disabled`: no new snapshot (§6.4 dedup) |
-| T13 | live | `enabled` | `connecting` | — | `register` sent |
+| T13 | live | `enabled` | `connecting` | — | `register` sent: queued behind an outstanding frame, or folded into a pending `OVERLOADED` re-send (§2.6 One in flight) |
 | T14 | `conn/*` | `register_error{<transient>}` | `connecting` | `RETRYING` | register text; `onRetry` fires |
 | T15 | `conn/*` | `app_error{OVERLOADED}`, `register` outstanding | `connecting` | `RETRYING` | register text; `onRetry` `delayMs` `min(1000 × 2^(n−1), 30000)` for the `n`-th consecutive (1000 for the first, §2.6) |
 | T16 | `online`, `disabled` | `register_error{<transient>}`, `app_error{OVERLOADED}` | unchanged | | replacement connection; `onRetry` still fires |
@@ -881,8 +886,8 @@ code takes its `lastError` from §6.6.
 | T22 | live | `register_error{CONFLICT}` | `error` | `CONFLICT` | closed |
 | T23 | live | `register_error{BAD_REQUEST \| NOT_IMPLEMENTED}` | `error` | `INTERNAL` | closed; before **or after** the first registration ([`D-2026-10-14-04`](./DECISIONS.md#2026-10-14)) |
 | T24 | live | `app_error{UNSUPPORTED_VERSION}` | `error` | `UNSUPPORTED_VERSION` | closed |
-| T25 | `conn/*` | `app_error{<other>}` (`CONNECTION_LIMIT`, `TOO_MANY_SERVICES`, `UNKNOWN_OP`, `BAD_REQUEST`, unknown), or a malformed envelope | `connecting` | `INTERNAL` | logged `warn` |
-| T26 | `online`, `disabled` | same as T25 | unchanged | | logged `warn` |
+| T25 | `conn/*` | `app_error{<other>}` (`CONNECTION_LIMIT`, `TOO_MANY_SERVICES`, `UNKNOWN_OP`, `BAD_REQUEST`, unknown), or a malformed envelope | `connecting` | `INTERNAL` | logged `warn`; an `app_error` other than `CONNECTION_LIMIT` with a `register` outstanding answers it (§2.6 One in flight): the handle stays `registering`, nothing is re-sent, the next `welcome` or `enable` registers again |
+| T26 | `online`, `disabled` | same as T25 | unchanged | | logged `warn`; an outstanding `register` is answered as in T25 |
 | T27 | `connecting` with no code, `RETRYING` or `INTERNAL` | `dial_failed` (no HTTP status observable, or one the reconnect rules retry, e.g. `503`), or a pre-`welcome` failure | `connecting` | `RETRYING` | dial text; redial scheduled, `onRetry` fires |
 | T28 | `connecting`/`DISCONNECTED` | `dial_failed` (no HTTP status observable, or one the reconnect rules retry), or a pre-`welcome` failure | unchanged | | `onRetry` fires; an observable `401`/`403`/`404` is T32/T33 |
 | T29 | `online`, `disabled` | `dial_failed` (no HTTP status observable, or one the reconnect rules retry), or a pre-`welcome` failure, of a drain replacement | unchanged | | `onRetry` fires; an observable `401`/`403`/`404` is T32/T33 |
@@ -998,7 +1003,8 @@ connection, as T7/T8 do.
 
 Applies are serialized as §6.2 step 4. The result resolves once the apply's frames are queued, not when they
 are answered. A connection **may hold** a name when it sent a `register` carrying it and has since neither sent
-an `unregister` carrying it nor received a `conflict` for it.
+an `unregister` carrying it nor received a `conflict` for it. A `register` dropped by `OVERLOADED` was never
+processed (§2.6) and does not count: a name carried only by a dropped frame is not held and gets no `unregister`.
 
 ### 6A.3 Subset and local operations
 
@@ -1069,7 +1075,7 @@ replaced by the per-service rules (§2.7 multi-service table, §6A.5) and these 
 | G4 | `online` | any reply, `OVERLOADED`, `disable`, `enable`, `conflict`, a whole-frame refusal, a subset call | unchanged | | only `services` changes; `onRetry` still fires for re-sends (as T16) |
 | G5 | live | a reply (or G7) after which: no service has been `active` since the controller last started a connection (T3), no frame is outstanding or queued, and every configured service not locally disabled is `rejected` | `error` | `INTERNAL` | `No service could be registered.`; logged `error` `INTERNAL: no service could be registered`; connection closed, desired config cleared (§6.8 Fatal); `services` keep their `rejected` entries |
 | G6 | live | `drain` with `reason:"replaced"` | `conflict` | `TAKEN_OVER` | every service `taken_over`; otherwise as T45 |
-| G7 | live | `app_error{TOO_MANY_SERVICES \| UNKNOWN_OP \| BAD_REQUEST \| <unknown>}` with a `register` outstanding | per G2 / G5, or unchanged when `online` | | answers that frame: exactly that frame's names → `rejected` with that code, nothing re-sent; names outside the frame keep their state; T25/T26 apply only with no `register` outstanding |
+| G7 | live | `app_error` with any code other than `OVERLOADED`, `CONNECTION_LIMIT` and `UNSUPPORTED_VERSION` (e.g. `TOO_MANY_SERVICES`, `UNKNOWN_OP`, `BAD_REQUEST`, unknown codes included) with a `register` outstanding | per G2 / G5, or unchanged when `online` | | answers that frame: exactly that frame's names → `rejected` with that code, nothing re-sent; names outside the frame keep their state; T25/T26 apply only with no `register` outstanding. `UNSUPPORTED_VERSION` also answers the frame (§2.6 One in flight) and is then fatal as T24 |
 | G8 | live | `disconnect{fatal:false}` | as T30 / T44 | | services keep their states; outstanding and queued frames are dropped; `unregistered` entries leave `services`; the next `welcome` is G1 |
 
 **Fatal rule (G5).** Partial failure never changes the group's state. Only a controller that has registered
@@ -1080,23 +1086,27 @@ therefore `online`, not fatal (the Go CLI exits on the mix, §11 row 50). Transi
 (§3.2 Transient per name), so they never count toward G5. The `lastError` `No service could be registered.` is
 new in this spec; §6A.9 localizes its `describeStatus` detail.
 
+**Emptied re-send.** A re-send of a dropped `register` with no names left is not sent and frees the slot
+(§6A.7 One in flight); no reply follows. With nothing outstanding or queued, a `connecting` group is evaluated as
+G1's "nothing to send": `online` at once unless G5 holds. An `online` group is unchanged (G4).
+
 ### 6A.7 Frames
 
 | Rule | Detail |
 |---|---|
 | Batches | The re-register list goes out in config order, at most 100 names per frame (§2.1 Batch). |
-| One in flight | §2.6. Calls queue their frames FIFO behind the outstanding one; a controller MAY merge queued frames of the same op while the names stay distinct and within 100. |
-| Correlation | A `registered`/`unregistered` answers the outstanding frame. A name of the outstanding `register` that the reply does not list is treated as a transient failure: it stays `pending` and is re-sent with the Transient row's backoff. A `registered` that lists none of the frame's names (including an empty reply, §2.3 Empty reply) frees the in-flight slot and counts as an all-transient reply: every unlisted name stays `pending` and the frame is re-sent for those names after `min(1000 × 2^(n−1), 30000)` ms (Backoff counter row), the same as any transient entry; nothing waits for the next `welcome`. |
+| One in flight | §2.6. Calls queue their frames FIFO behind the outstanding one; a controller MAY merge queued frames of the same op while the names stay distinct and within 100. After `OVERLOADED` the slot stays reserved for the re-send: a name enabled or added during the pause is folded into that one re-send of a dropped `register`, never sent as a second frame, as long as the frame stays within 100 names; the re-send lists the dropped frame's names in their order, then the folded-in names in the order their calls arrived (`ms_12_overloaded_reserved_slot_fold_in`). A name removed or locally disabled during the pause is dropped from the re-send; if the connection may hold it, its `unregister` queues behind the re-send. A re-send with no names left (every name of the dropped frame removed or locally disabled during the pause and nothing folded in) is not sent; the slot is freed. With the slot freed and nothing outstanding or queued, a `connecting` group is evaluated as G1's "nothing to send": `online` at once unless G5 holds; an `online` group is unchanged (G4) (§6A.6). A dropped `unregister` folds nothing in: every call during its pause queues behind it. A reply that settles the frame cancels every pending re-send timer for it. One controller owns the connection's frames (§3.2 One controller per connection). |
+| Correlation | A `registered`/`unregistered` answers the outstanding frame. A whole-frame `error` op that answers an outstanding `unregister` settles it like an `unregistered` would: the frame's names leave the controller's held set, logged `warn`. A name of the outstanding `register` that the reply does not list is treated as a transient failure: it stays `pending` and is re-sent with the Transient row's backoff. A `registered` that lists none of the frame's names (including an empty reply, §2.3 Empty reply) frees the in-flight slot and counts as an all-transient reply: every unlisted name stays `pending` and the frame is re-sent for those names after `min(1000 × 2^(n−1), 30000)` ms with the transient counter (Backoff counter row), the same as any transient entry; nothing waits for the next `welcome`. |
 | `OVERLOADED` | Re-send of the outstanding frame per §2.6; `onRetry` `reason` `"register failed: OVERLOADED: <message>"` (also for an `unregister`); tunnel fixture `retry` cause `overloaded`. |
 | Transient | §3.2 Transient per name; `onRetry` `reason` `"register failed: <CODE>: <message>"` of the reply's first transient entry; for a reply that lists none of the frame's names, `"register failed: INTERNAL: unlisted in reply"`; `retry` cause `register`. |
-| Backoff counter | One per controller, as §3.2: `n` counts consecutive `OVERLOADED`s and all-transient replies since the last successful reply; the re-send waits `min(1000 × 2^(n−1), 30000)` ms; any successful reply (a `registered` with at least one non-transient entry, or an `unregistered`) resets it (§2.6). |
+| Backoff counter | Two counters, each `n` giving a re-send delay of `min(1000 × 2^(n−1), 30000)` ms. The `OVERLOADED` counter (§2.6): `n` counts consecutive `OVERLOADED`s on this connection and resets on any non-`OVERLOADED` reply (a `registered`, an `unregistered`, or a whole-frame `error` op answering the frame); it drives `retry` cause `overloaded`. The transient counter (§3.2 Transient retry): one per controller, carried across reconnects; `n` counts consecutive all-transient replies and resets on a successful reply (a `registered` with at least one non-transient entry, or an `unregistered`); it drives `retry` cause `register`. |
 
 ### 6A.8 Reconnect, drain, `stop()` and `dispose()`
 
 | Rule | Detail |
 |---|---|
 | Reconnect | Every `welcome` (a reconnect or a drain replacement, T42) re-registers the full list (G1). The old connection's ops are stale per §6.8 Drain and T38, its `conflict`s included. |
-| `stop()` / `dispose()` | As §6.3. The shutdown sends `unregister` for every name the connection may hold, in frames of at most 100, one in flight, all within §3.2's single 2000 ms wait, then closes gracefully. In group `conflict` (G6) nothing is unregistered (§5.7 step 1). Status `{state: "off", services: {}}`. |
+| `stop()` / `dispose()` | As §6.3. The shutdown sends `unregister` for every name the connection may hold, in frames of at most 100, one in flight, all within §3.2's single 2000 ms wait, then closes gracefully. Each `unregister` is settled by its own reply by frame order, as §3.2 Unregister: a `register` still outstanding ahead of it is settled by its own reply, and one dropped by `OVERLOADED` is abandoned: the agent MUST NOT re-send it. In group `conflict` (G6) nothing is unregistered (§5.7 step 1). Status `{state: "off", services: {}}`. |
 
 ### 6A.9 Status text
 
@@ -1236,7 +1246,8 @@ Rust: snake_case, builder or `Config` struct, `async`. Python: snake_case, datac
 | `ExposeConflict {serverId, name, reason}` | `Conflict{ServerID, Name, Reason}` | `Conflict {server_id, name, reason}` | `Conflict(server_id, name, reason)` |
 | `createTunnel(options)` | `NewTunnel(TunnelOptions) (*Tunnel, error)` | `Tunnel::new(TunnelOptions)` | `create_tunnel(**options) -> Tunnel` |
 | `TunnelOptions` (+ `logger`) | `TunnelOptions` (+ `Logger *slog.Logger`) | `TunnelOptions` (logs via `tracing`, target `mcpwarp`) | `TunnelOptions` (logs via `logging.getLogger("mcpwarp")`) |
-| `TunnelConfig {enabled, token, name, url, kind, webSocket}` | `TunnelConfig{Enabled, Token, Name, URL, Kind, WebSocket}` | `TunnelConfig {enabled, token, name, url, kind, web_socket}` | `TunnelConfig(enabled, token, name, url, kind, web_socket)` |
+| `TunnelConfig {enabled, token, name, url, kind, webSocket}` | `TunnelConfig{Enabled, Token, TokenSource, Name, URL, Kind, WebSocket}` | `TunnelConfig {enabled, token, name, url, kind, web_socket}` | `TunnelConfig(enabled, token, name, url, kind, web_socket)` |
+| `TunnelConfig.token` as a provider (§6.2 Token provider) | `TunnelConfig.TokenSource` (interface, identity compared by `==`, same rule as the socket factory), `TokenSourceFunc` adapter | — | — |
 | `.configure(config)` | `Configure(ctx, TunnelConfig)` | `configure(TunnelConfig).await` | `await configure(config)` |
 | `.stop()` | `Stop(ctx)` | `stop().await` | `await stop()` |
 | `.dispose({timeoutMs})` | `Dispose(ctx)` (timeout from `ctx`) | `dispose(timeout: Duration).await` | `await dispose(timeout_ms=5000)` |
@@ -1295,14 +1306,15 @@ precedence, so the body is already buffered and capped.
 ### 9.2 Multi-service controller names
 
 Proposed with v0.7.0; no SDK ships them yet. JS is canonical. The Go column follows the CLI where it has a
-name (its TUI states `pending`, `active`, `disabled`, `rejected`); the rest is §9's idiom.
+name (its TUI states `pending`, `active`, `disabled`, `rejected`); the rest is §9's idiom. ws-mixer-go v0.10.0
+(not yet tagged) confirmed every Go name in this table.
 
 | JS (canonical) | Go | Rust | Python |
 |---|---|---|---|
 | `createServiceGroup(options)` | `NewServiceGroup(ServiceGroupOptions) (*ServiceGroup, error)` | `ServiceGroup::new(ServiceGroupOptions)` | `create_service_group(**options) -> ServiceGroup` |
 | `ServiceGroupOptions` (+ `logger`) | `ServiceGroupOptions` (+ `Logger *slog.Logger`) | `ServiceGroupOptions` | `ServiceGroupOptions` |
 | `trustServerIdHeader: boolean` (default `false`, §4.8 Trust gate) | `ServiceGroupOptions.TrustServerIDHeader bool` | `ServiceGroupOptions { trust_server_id_header: bool, .. }` | `trust_server_id_header: bool = False` |
-| `ServiceGroupConfig {enabled, token, services, url, webSocket}` | `ServiceGroupConfig{Enabled, Token, Services, URL, WebSocket}` | `ServiceGroupConfig {enabled, token, services, url, web_socket}` | `ServiceGroupConfig(enabled, token, services, url, web_socket)` |
+| `ServiceGroupConfig {enabled, token, services, url, webSocket}` | `ServiceGroupConfig{Enabled, Token, TokenSource, Services, URL, WebSocket}` (`TokenSource` as `TunnelConfig.TokenSource`, §9) | `ServiceGroupConfig {enabled, token, services, url, web_socket}` | `ServiceGroupConfig(enabled, token, services, url, web_socket)` |
 | `ServiceConfig {name, kind, handler, target, targetTimeoutMs}` | `ServiceConfig{Name, Kind, Handler, Target, TargetTimeout}` | `ServiceConfig {name, kind, handler, target, target_timeout}` | `ServiceConfig(name, kind, handler, target, target_timeout_ms)` |
 | `.configure(config)` | `Configure(ctx, ServiceGroupConfig)` | `configure(ServiceGroupConfig).await` | `await configure(config)` |
 | `.stop()`, `.dispose({timeoutMs})` | `Stop(ctx)`, `Dispose(ctx)` | `stop().await`, `dispose(timeout: Duration).await` | `await stop()`, `await dispose(timeout_ms=5000)` |
@@ -1311,8 +1323,8 @@ name (its TUI states `pending`, `active`, `disabled`, `rejected`); the rest is �
 | `.enable(name)`, `.disable(name)` | `Enable(ctx, name string)`, `Disable(ctx, name string)` | `enable(&str).await`, `disable(&str).await` | `await enable(name)`, `await disable(name)` |
 | `.status` | `Status() ServiceGroupStatus` | `status() -> ServiceGroupStatus` | `.status` |
 | `.subscribe(l)` → unsubscribe | `Subscribe(func(ServiceGroupStatus)) (unsubscribe func())` | `subscribe(Fn) -> Subscription` | `subscribe(cb) -> Callable[[], None]` |
-| `ServiceGroupStatus {state, code, lastError, services}` | `ServiceGroupStatus{State, Code, LastError, Services map[string]ServiceStatus}` | `ServiceGroupStatus {state, code, last_error, services: BTreeMap<String, ServiceStatus>}` | `ServiceGroupStatus(state, code, last_error, services: dict[str, ServiceStatus])` |
-| `ServiceStatus {state, id, url, code, lastError}` | `ServiceStatus{State, ID, URL, Code, LastError}` | `ServiceStatus {state, id, url, code, last_error}` | `ServiceStatus(state, id, url, code, last_error)` |
+| `ServiceGroupStatus {state, code, lastError, services}` | `ServiceGroupStatus{State, Code StatusCode, LastError, Services map[string]ServiceStatus}` | `ServiceGroupStatus {state, code, last_error, services: BTreeMap<String, ServiceStatus>}` | `ServiceGroupStatus(state, code, last_error, services: dict[str, ServiceStatus])` |
+| `ServiceStatus {state, id, url, code, lastError}` | `ServiceStatus{State, ID, URL, Code string, LastError}` (`Code` is a plain string, since a `rejected` service carries the wire code, §6A.4) | `ServiceStatus {state, id, url, code, last_error}` | `ServiceStatus(state, id, url, code, last_error)` |
 | `ServiceState` (`"pending"` … `"unregistered"`) | `ServiceState` (`ServicePending`, `ServiceActive`, `ServiceDisabled`, `ServiceRejected`, `ServiceTakenOver`, `ServiceUnregistered`) | `enum ServiceState` | `ServiceState` (`StrEnum`) |
 | `describeServiceStatus(service, {locale, messages})` | `DescribeServiceStatus(ServiceStatus, DescribeOptions)` | `describe_service_status(&ServiceStatus, &DescribeOptions)` | `describe_service_status(service, locale=None, messages=None)` |
 | `MAX_SERVICES_PER_MESSAGE` (`100`) | `MaxServicesPerMessage` | `MAX_SERVICES_PER_MESSAGE` | `MAX_SERVICES_PER_MESSAGE` |
@@ -1525,7 +1537,7 @@ was called.
 | `sent` | `{op, names, conn?}`, inline among the events, an observation: the next `register`/`unregister` the SDK sent on that connection is `op` with exactly `names`, in order. Every frame except the `unregister`s of a close has its `sent` at the point it goes out; at the end no recorded frame (closes aside) is left unmatched |
 | `registered` | `{services: [{name, url, id, created}], errors: [{name, code, message?, id?}], conn?}`: the reply to the outstanding `register`, every entry named, exactly the frame's names, each once |
 | `unregistered` | `{services: [{name, id}], conn?}`: the reply to the outstanding `unregister`. Every `unregister` reply is an explicit event, except those of a close (`stop`, `dispose`, a fatal error, a restarting `configure`), which the fake edge answers by itself (§10.4 runner rule 5) |
-| `app_error` | `{code, message?, conn?}`; `OVERLOADED` and `TOO_MANY_SERVICES` answer the outstanding frame (§2.6) |
+| `app_error` | `{code, message?, conn?}`; every code other than `OVERLOADED` and `CONNECTION_LIMIT` (e.g. `TOO_MANY_SERVICES`) answers the outstanding frame; `OVERLOADED` drops it for the re-send (§2.6 One in flight) |
 | `disabled` | `{id, reason?, conn?}`: `disable` for that id (no name) |
 | `enabled` | `{id?, name?, conn?}`: `enable` with those fields |
 | `conflict` | `{name, id?, reason?, conn?}`: per name |
@@ -1549,13 +1561,16 @@ Coverage, one fixture each:
 | `ms_09_fatal_first_reply` | a fatal first reply (G5, `error`/`INTERNAL` `No service could be registered.`) |
 | `ms_10_server_disabled_only_first_reply` | a first reply of only `SERVER_DISABLED` entries, not fatal (G2) |
 | `ms_11_first_reply_disabled_and_refused_not_fatal` | a first reply mixing `SERVER_DISABLED` with other refusals, no success: `online`, not fatal (§6A.6 Fatal rule; the Go CLI exits, §11 row 50) |
+| `ms_12_overloaded_reserved_slot_fold_in` | `OVERLOADED` reserves the in-flight slot: a service added during the pause is folded into the one re-send, and a later `OVERLOADED` on an `unregister` backs off 1000 ms again after the `registered` reset the counter (§2.6, §6A.7) |
+| `ms_13_transient_then_overloaded_separate_counters` | the two counters apart: after an all-transient `registered` and its 1000 ms `register` re-send, the first `OVERLOADED` backs off 1000 ms and the second 2000 ms, unaffected by the transient streak (§2.6, §3.2 Transient retry, §6A.7 Backoff counter) |
+| `ms_14_overloaded_all_removed_no_resend` | a re-send with no names left is not sent: the only name of a dropped re-register is removed during the pause, so no `register` follows the retry, the slot is freed, the held name's `unregister` is the next frame, and a later `addService` registers afresh (§2.6, §6A.7 One in flight) |
 
 ---
 
 ## 11. Deviations from SDK HEADs
 
 HEAD = `d45d3b4` (`SDK_VERSION` `"0.10.1"`). Each row is a change ws-mixer-js 0.11.0 makes. Rows 18–19 were
-found later, against `467bd5f` (`SDK_VERSION` `"0.11.0"`); their action is for a 0.11.x release.
+found later, against `467bd5f` (`SDK_VERSION` `"0.11.0"`); both are fixed in 0.11.1.
 
 | # | Item | HEAD behaviour | Spec behaviour | 0.11.0 action |
 |---|---|---|---|---|
@@ -1576,8 +1591,8 @@ found later, against `467bd5f` (`SDK_VERSION` `"0.11.0"`); their action is for a
 | 15 | `drain` with `reason:"replaced"` (§3.3, D-2026-10-14-04) | the mcpwarp layer never reads the drain reason: every `drain` is a hand-over, the replacement re-registers on `welcome` and takes the name back | take-over: `TAKEN_OVER` rejection or `conflict` event, sticky; no replacement dial, no reconnect, client closed (§3.3, §5.4, §5.6, §5.9, §6.7 T45) | route `drain{replaced}` into the Session's conflict path, in `expose()` and the tunnel, and close the client instead of dialing a replacement |
 | 16 | `serverId` of a `drain{replaced}` take-over with no known server id (§5.4, §5.6, D-2026-10-14-06) | the `conflict` event / `TAKEN_OVER` rejection carries `serverId: ""` | `serverId` omitted (absent / `undefined`), never `""` | omit the field when no server id is known |
 | 17 | `onRetry` for the token-refresh redial (§5.9, D-2026-10-14-06) | not fired for the one immediate redial after a rejected token | a scheduled reconnect: `onRetry` fires with `{attempt: 1, delayMs: 0, reason: "token-refresh"}` | fire `onRetry` before the token-refresh redial |
-| 18 | Take-over close on the wire (§3.3, §6.8, D-2026-10-14-07) | `467bd5f`: a `conflict` (tunnel `conflicted()` → `detach()` → `handle.close()`) and a `drain{replaced}` (`closeClient()`) both call `client.close()` with its defaults: `drain{client_requested}` on stream 0, a grace wait (up to 5 s) only while streams are open, then `error{NO_ERROR}` + close `1000` (`conn.close()` ends with `fail(NO_ERROR)`, `src/conn.ts:1156`); no `unregister`. Only the drain and the grace deviate | `error{NO_ERROR}` + close `1000` at once: no `drain{client_requested}`, no grace, no `unregister`, never `APPLICATION_CLOSE` | 0.11.x: skip the drain and the grace on the take-over path |
-| 19 | Envelope check order (§2.8 rule 10, D-2026-10-14-07) | `467bd5f` `decodeEnvelope`: a `registered.services[]` entry checks `created` first, then `name`, `id`, `url`; a multi-defect entry reports the `created` error | `name`, `id`, `url`, `created` (`envelope/invalid/registered_multiple_defects.json`) | 0.11.x: move the `created` check after `url` |
+| 18 | Take-over close on the wire (§3.3, §6.8, D-2026-10-14-07) | `467bd5f`: a `conflict` (tunnel `conflicted()` → `detach()` → `handle.close()`) and a `drain{replaced}` (`closeClient()`) both call `client.close()` with its defaults: `drain{client_requested}` on stream 0, a grace wait (up to 5 s) only while streams are open, then `error{NO_ERROR}` + close `1000` (`conn.close()` ends with `fail(NO_ERROR)`, `src/conn.ts:1156`); no `unregister`. Only the drain and the grace deviate | `error{NO_ERROR}` + close `1000` at once: no `drain{client_requested}`, no grace, no `unregister`, never `APPLICATION_CLOSE` | fixed in 0.11.1 |
+| 19 | Envelope check order (§2.8 rule 10, D-2026-10-14-07) | `467bd5f` `decodeEnvelope`: a `registered.services[]` entry checks `created` first, then `name`, `id`, `url`; a multi-defect entry reports the `created` error | `name`, `id`, `url`, `created` (`envelope/invalid/registered_multiple_defects.json`) | fixed in 0.11.1 |
 
 Rows 20 onward (v0.6.3, [`D-2026-10-15-01`](./DECISIONS.md#2026-10-15)…`-05`) cover every SDK, so they name it. HEAD
 is the build reviewed on 2026-10-14/15: ws-mixer-js 0.11.x, ws-mixer-go v0.9.0 (`b48fc00`, the first release
@@ -1586,18 +1601,18 @@ and `ws-mixer-mcpwarp` 0.1.x, and the ws-mixer-python proposal (unreleased).
 
 | # | SDK | Item | HEAD behaviour | Spec behaviour | Action / version |
 |---|---|---|---|---|---|
-| 20 | JS | Client drain (WIRE.md §2.9 Client side of a drain) | `drain{client_requested}` without `deadline_ms` (on the wire: "immediately") while waiting 5 s; an `OPEN` during that grace is accepted and delivered | `deadline_ms: 5000`; an `OPEN` after the own drain → `RESET(REFUSED_STREAM)` | 0.11.x |
-| 21 | JS | String limits (WIRE.md §2.7) | counted in UTF-16 units (`.length`): stricter for non-BMP text | Unicode code points | 0.11.x |
-| 22 | JS | `drain.retry_after_ms` (WIRE.md §2.9) | ignored; drain jitter only | wait ≥ `retry_after_ms`, + ≤ 2000 ms jitter | 0.11.x |
-| 23 | JS | Own graceful close (CLIENT-SDK.md Disconnect reason shape) | reports `errorCode: 0` / `NO_ERROR` | no `errorCode`/`errorName`; `wsCode: 1000` only | 0.11.x, minor |
-| 24 | JS | Unrepresentable request in target mode (§4.5) | `500` `internal error` (`Headers.append` throws) | `400` `request cannot be represented as a web Request` (`bridging/target_unrepresentable_400`) | 0.11.x |
-| 25 | JS | Forwarded target encoding (§4.3) | the forwarded target re-encoded: raw UTF-8 `?q=café` → `caf%C3%83%C2%A9` | encoded once from the received bytes (`bridging/target_utf8_query`) | 0.11.x |
-| 26 | JS | Head cap (§4.2) | terminating blank line not counted | counted | 0.11.x, minor |
-| 27 | JS | `HEAD` head-parse-error replies (§4.5) | `400`/`431` sent with a body, as for `GET` | head-only (`bridging/head_mcp_400_headonly`) | 0.11.x, minor |
-| 28 | JS | `disable` with an unknown id (§2.7) | adopted as the handle's id before the first registration | held until a `registered` brings it (`tunnel/42_disable_unknown_id_held`) | 0.11.2, minor |
-| 29 | JS | Ops after the connection ended (§2.7) | `conn.ts` applies `registered`/`disable`/`enable` flushed after the disconnect | ignored; `conflict`/`error` still applied (`tunnel/44_stale_disable_after_disconnect_ignored`) | 0.11.x, minor |
-| 30 | JS | WINDOW stale check (WIRE.md §2.5) | `frame.ts` raises the increment-0 `StreamError` before the stale check | stale check first | 0.11.x, minor |
-| 31 | JS | Token provider on the tunnel (§6.2) | `TunnelConfig.token` string only | string or provider (T46–T48) | 0.11.x: accept a provider |
+| 20 | JS | Client drain (WIRE.md §2.9 Client side of a drain) | `drain{client_requested}` without `deadline_ms` (on the wire: "immediately") while waiting 5 s; an `OPEN` during that grace is accepted and delivered | `deadline_ms: 5000`; an `OPEN` after the own drain → `RESET(REFUSED_STREAM)` | fixed in 0.11.2 |
+| 21 | JS | String limits (WIRE.md §2.7) | counted in UTF-16 units (`.length`): stricter for non-BMP text | Unicode code points | fixed in 0.11.2 |
+| 22 | JS | `drain.retry_after_ms` (WIRE.md §2.9) | ignored; drain jitter only | wait ≥ `retry_after_ms`, + ≤ 2000 ms jitter | fixed in 0.11.2 |
+| 23 | JS | Own graceful close (CLIENT-SDK.md Disconnect reason shape) | reports `errorCode: 0` / `NO_ERROR` | no `errorCode`/`errorName`; `wsCode: 1000` only | fixed in 0.11.2 |
+| 24 | JS | Unrepresentable request in target mode (§4.5) | `500` `internal error` (`Headers.append` throws) | `400` `request cannot be represented as a web Request` (`bridging/target_unrepresentable_400`) | fixed in 0.11.1 |
+| 25 | JS | Forwarded target encoding (§4.3) | the forwarded target re-encoded: raw UTF-8 `?q=café` → `caf%C3%83%C2%A9` | encoded once from the received bytes (`bridging/target_utf8_query`) | fixed in 0.11.1 |
+| 26 | JS | Head cap (§4.2) | terminating blank line not counted | counted | fixed in 0.11.2 |
+| 27 | JS | `HEAD` head-parse-error replies (§4.5) | `400`/`431` sent with a body, as for `GET` | head-only (`bridging/head_mcp_400_headonly`) | fixed in 0.11.2 |
+| 28 | JS | `disable` with an unknown id (§2.7) | adopted as the handle's id before the first registration | held until a `registered` brings it (`tunnel/42_disable_unknown_id_held`) | fixed in 0.11.2 |
+| 29 | JS | Ops after the connection ended (§2.7) | `conn.ts` applies `registered`/`disable`/`enable` flushed after the disconnect | ignored; `conflict`/`error` still applied (`tunnel/44_stale_disable_after_disconnect_ignored`) | fixed in 0.11.2 |
+| 30 | JS | WINDOW stale check (WIRE.md §2.5) | `frame.ts` raises the increment-0 `StreamError` before the stale check | stale check first | fixed in 0.11.2 (stale before increment: a high-bit increment on a retired id is discarded too) |
+| 31 | JS | Token provider on the tunnel (§6.2) | `TunnelConfig.token` string only | string or provider (T46–T48) | fixed in 0.11.2 |
 | 32 | Go | Own drain (WIRE.md §2.9) | an `OPEN` after its own `drain{client_requested}` is checked against `last_stream_id` 0: spurious `4001` | `RESET(REFUSED_STREAM)` | fixed in ws-mixer-go v0.9.0 |
 | 33 | Go | Hand-over retire (WIRE.md §2.9) | the drained connection is closed at the replacement's `welcome`, cutting in-flight streams | retired at `deadline_ms + 1000` (30000 absent) from the replacement's `welcome`, earlier when empty | fixed in ws-mixer-go v0.9.0 |
 | 34 | Go | Integral numbers (WIRE.md §2.7) | ws-mixer `fieldInt` rejects `1.0`/`1e3` (`PROTOCOL_ERROR`), while the mcpwarp `v` check accepts `1.0` | accepted as the integer | fixed in ws-mixer-go v0.9.0 |
@@ -1606,20 +1621,28 @@ and `ws-mixer-mcpwarp` 0.1.x, and the ws-mixer-python proposal (unreleased).
 | 37 | Go | Take-over close (§6.8) | after a `conflict` op sends `drain{client_requested}` first | `error{NO_ERROR}` + `1000` at once (`(*Client).CloseImmediately`) | fixed in ws-mixer-go v0.9.0 |
 | 38 | Go | Unrepresentable request in target mode (§4.5) | forwarded raw; likely `502` | `400` | fixed in ws-mixer-go v0.9.0 (`TestBridgeUnrepresentable400`) |
 | 39 | Go | `HEAD` head-parse-error replies (§4.5) | `400`/`431` sent with a body, as for `GET` | head-only | fixed in ws-mixer-go v0.9.0 (`TestBridgeHeadRepliesHeadOnly`) |
-| 40 | Go | WINDOW for a retired id (WIRE.md §2.5) | v0.9.0 raises the increment-`0` stream error at decode (`wsmixer/frame.go:121`), before the stale check (`dispatch.go:224`): a retired id is answered with RESET (fails `sequences/window_stale_retired_stream`) | stale check first: discard + count stale | next ws-mixer-go release, minor |
-| 41 | Go | Token provider on the tunnel (§6.2) | `TunnelConfig.Token` string only (`mcpwarp/tunnel.go:88`) | string or provider (T46–T48) | v0.10.0: accept a provider |
-| 42 | Rust | `disable` with an unknown id (§2.7) | adopted when no id is known; a foreign id dropped | held until a `registered` brings it | `ws-mixer-mcpwarp` 0.1.1, minor |
+| 40 | Go | WINDOW for a retired id (WIRE.md §2.5) | v0.9.0 raises the increment-`0` stream error at decode (`wsmixer/frame.go:121`), before the stale check (`dispatch.go:224`): a retired id is answered with RESET (fails `sequences/window_stale_retired_stream`) | stale check first: discard + count stale | fixed in ws-mixer-go v0.9.1 |
+| 41 | Go | Token provider on the tunnel (§6.2) | `TunnelConfig.Token` string only (`mcpwarp/tunnel.go:88`) | string or provider (T46–T48) | fixed in ws-mixer-go v0.9.1: `TunnelConfig.TokenSource` (interface) with the `TokenSourceFunc` adapter (§9) |
+| 42 | Rust | `disable` with an unknown id (§2.7) | adopted when no id is known; a foreign id dropped | held until a `registered` brings it | fixed in ws-mixer-mcpwarp 0.1.1 |
 | 43 | Rust | Forwarded target `[` `]` (§4.3) | escaped | passed through unescaped | fixed |
-| 44 | Rust | Token provider on the tunnel (§6.2) | `TunnelConfig.token` string only | string or provider | 0.1.x: accept a provider |
-| 45 | Python | `drain.retry_after_ms` (WIRE.md §2.9) | ignored (proposal) | wait ≥ `retry_after_ms`, + ≤ 2000 ms jitter | implemented in ws-mixer-python 0.1.x |
-| 46 | Go | `disable` with an unknown id (§2.7) | adopted when no id is known (`mcpwarp/session.go:322`) | held until a `registered` brings it (`tunnel/42_disable_unknown_id_held`) | next ws-mixer-go release |
-| 47 | JS | Unrepresentable methods in `./node` `server` mode (§4.5) | `CONNECT`, `TRACE`, `TRACK` not refused | `400` `request cannot be represented as a web Request` (`bridging/handler_connect_400`) | 0.11.x |
-| 48 | Python | Unrepresentable requests (§4.5) | `CONNECT`, `TRACE`, `TRACK` and NUL header values not refused, handler and target mode | `400` `request cannot be represented as a web Request` | implemented in ws-mixer-python 0.1.x |
-| 49 | Go CLI | `OVERLOADED` and frames in flight (§2.6, §6A.7) | one FIFO send queue, but replies are never awaited (`unregistered` only debug-logged); after `OVERLOADED` sends pause 1 s, at most 64 queued, oldest dropped; the dropped `register`/`unregister` is logged and **never re-sent** (`internal/appproto/overload.go`, `internal/tunnel/tunnel.go:283-285`) | at most one `register`/`unregister` outstanding per connection; the outstanding frame re-sent after 1 s, 2 s … 30 s until answered | next CLI release |
-| 50 | Go CLI | First-reply fatal rule (§6A.6 G5) and refused names | exits 1 when the first reply has no successes and any error other than `SERVER_DISABLED` — also when `SERVER_DISABLED` entries are mixed with refusals, and when the errors are transient (`INTERNAL` …); a failed name is never retried on its own (`tunnel.go:320-328`) | fatal (`error`/`INTERNAL`, `No service could be registered.`) only when nothing was ever registered and every service is refused: any `SERVER_DISABLED` entry keeps the connection (the dashboard's `enable` arrives on it); transient entries are re-sent per name with backoff (§3.2 Transient per name) | next CLI release |
+| 44 | Rust | Token provider on the tunnel (§6.2) | `TunnelConfig.token` string only | string or provider | fixed in ws-mixer-mcpwarp 0.1.1 |
+| 45 | Python | `drain.retry_after_ms` (WIRE.md §2.9) | ignored (proposal) | wait ≥ `retry_after_ms`, + ≤ 2000 ms jitter | implemented in ws-mixer-python 0.1.x (unreleased, pins v0.7.0) |
+| 46 | Go | `disable` with an unknown id (§2.7) | adopted when no id is known (`mcpwarp/session.go:322`) | held until a `registered` brings it (`tunnel/42_disable_unknown_id_held`) | fixed in ws-mixer-go v0.9.1 |
+| 47 | JS | Unrepresentable methods in `./node` `server` mode (§4.5) | `CONNECT`, `TRACE`, `TRACK` not refused | `400` `request cannot be represented as a web Request` (`bridging/handler_connect_400`) | fixed in 0.11.2 |
+| 48 | Python | Unrepresentable requests (§4.5) | `CONNECT`, `TRACE`, `TRACK` and NUL header values not refused, handler and target mode | `400` `request cannot be represented as a web Request` | implemented in ws-mixer-python 0.1.x (unreleased, pins v0.7.0) |
+| 49 | Go CLI | `OVERLOADED` and frames in flight (§2.6, §6A.7) | one FIFO send queue, but replies are never awaited (`unregistered` only debug-logged); after `OVERLOADED` sends pause 1 s, at most 64 queued, oldest dropped; the dropped `register`/`unregister` is logged and **never re-sent** (`internal/appproto/overload.go`, `internal/tunnel/tunnel.go:283-285`) | at most one `register`/`unregister` outstanding per connection; the outstanding frame re-sent after 1 s, 2 s … 30 s until answered | the CLI release that integrates ws-mixer-go v0.10.0 |
+| 50 | Go CLI | First-reply fatal rule (§6A.6 G5) and refused names | v0.2.4: exits 1 when the first reply has no successes and any error other than `SERVER_DISABLED` — also when `SERVER_DISABLED` entries are mixed with refusals, and when the errors are transient (`INTERNAL` …); a failed name is never retried on its own (`tunnel.go:320-328`). v0.2.7 (2026-10-19) adopts the `SERVER_DISABLED` clause: zero successes are fatal only when no error is `SERVER_DISABLED` (`ms_11` passes). Remaining: transient codes (`INTERNAL` …) still count as refusals (no per-name retry), and the fatal check runs per reply rather than on the overall service state | fatal (`error`/`INTERNAL`, `No service could be registered.`) only when nothing was ever registered and every service is refused: any `SERVER_DISABLED` entry keeps the connection (the dashboard's `enable` arrives on it); transient entries are re-sent per name with backoff (§3.2 Transient per name) | partly fixed in v0.2.7; the rest in the CLI release that integrates ws-mixer-go v0.10.0 |
 | 51 | Go CLI | Batch size (§2.1 Batch, §6A.7) | every configured server in one `register` per `welcome`, no cap; a whole-frame `error{TOO_MANY_SERVICES}` goes through the generic branch and leaves the rows `pending` | at most 100 names per frame, consecutive frames one in flight; a whole-frame refusal marks the frame's names `rejected` (G7) | next CLI release |
-| 52 | JS | `registered` bringing a held `disable`'s id (§2.7, §5.9) | emits `disabled` only; no `registered` event for that registration | `registered` then `disabled`, back to back; the tunnel collapses them into one `disabled` snapshot (T50) | 0.11.x |
-| 53 | JS | First rejected token with a provider (§5.9, [CLIENT-SDK.md](./CLIENT-SDK.md)'s Rejected token row) | 0.11.1 reports no `disconnect` for the `401` at the upgrade or the `4011` before `welcome`; only `onRetry` and the redial | a non-fatal `disconnect` like any other (`phase` `dial`/`handshake`, `fatal: false`), then `onRetry` `{1, 0, "token-refresh"}`, then the redial | 0.11.x |
+| 52 | JS | `registered` bringing a held `disable`'s id (§2.7, §5.9) | emits `disabled` only; no `registered` event for that registration | `registered` then `disabled`, back to back; the tunnel collapses them into one `disabled` snapshot (T50) | fixed in 0.11.2 |
+| 53 | JS | First rejected token with a provider (§5.9, [CLIENT-SDK.md](./CLIENT-SDK.md)'s Rejected token row) | 0.11.1 reports no `disconnect` for the `401` at the upgrade or the `4011` before `welcome`; only `onRetry` and the redial | a non-fatal `disconnect` like any other (`phase` `dial`/`handshake`, `fatal: false`), then `onRetry` `{1, 0, "token-refresh"}`, then the redial | fixed in 0.11.2 |
+| 54 | JS | `enable` matching (§2.7) | 0.11.2 matches a dashboard `enable` by `name` only | by `name` or `id` | 0.11.3 |
+| 55 | JS | `OVERLOADED` re-send delay (§2.6) | 0.11.2 waits a fixed pause | `min(1000 × 2^(n−1), 30000)` ms, with its own counter | 0.11.3 |
+| 56 | JS | Re-send timers (§2.6 One in flight) | 0.11.2: a stale re-send timer sends a `register` after the frame was answered | any reply that settles the frame cancels every pending re-send timer for it | 0.11.3 |
+| 57 | JS | Whole-frame `error` op (§2.6 One in flight) | 0.11.2: a whole-frame `error` op with another code does not settle the outstanding frame | any code other than `OVERLOADED` and `CONNECTION_LIMIT` answers it | 0.11.3 |
+| 58 | JS | `registered` listing none of the frame's names (§2.3 Empty reply) | 0.11.2 does not re-send | re-sent after §3.2's transient backoff | 0.11.3 |
+| 59 | JS | Close in the same delivery burst as `welcome` ([CLIENT-SDK.md](./CLIENT-SDK.md)'s Disconnect reason shape row) | 0.11.2: a close landing in the same task as `welcome` is reported with `phase` `"handshake"` and takes the handshake reconnect path | `phase` `"connected"` from `welcome` onward, with that phase's reconnect policy; the SDK still never exposes the dead connection as current | 0.11.3 |
+| 60 | Rust | §3.2 / §2.6 frames in flight | ws-mixer-mcpwarp 0.1.0: a fixed 1000 ms `OVERLOADED` pause reset only on success; a second `register` on `enable` while a frame is outstanding, and a stale timer re-sending after success; a whole-frame `error` op with another code not settling the frame; an empty `registered` leaving the session `registering`; an `enable` matching by `id` only ignored; only `unregistered` ending the close wait | §2.6 `OVERLOADED` re-send and One in flight, §2.3 Empty reply, §2.7 `enable` row, §3.2 Unregister | fixed in ws-mixer-mcpwarp 0.1.1 |
+| 61 | Go CLI | State vocabulary (§6A.4), informative | v0.2.7: a take-over is shown as `rejected` (code `CONFLICT`, sticky until a local enable), a local unregister as `disabled`; no connecting/backoff state in the header | `taken_over`, `unregistered`, and the connection state (§6A.4) | n/a (UI vocabulary) |
 
 Rows 49–51 (v0.7.0, [`D-2026-10-18-01`](./DECISIONS.md#2026-10-18)…`-04`) are against mcpwarp/cli v0.2.4
 (`ab462de`, ws-mixer-go v0.7.0), the only multi-service agent today. Row 52 follows the 2026-10-18 ruling on
@@ -1628,6 +1651,10 @@ held `disable`s (§2.7 Held `disable` lifetime); row 53, against ws-mixer-js 0.1
 ws-mixer-go `mcpwarp` package, `ws-mixer-mcpwarp` (Rust) or ws-mixer-python: each ships the single-service
 `expose()`/tunnel only, which is a conforming subset of the profile; they run the multi-service fixtures as
 §10.6 says. ws-mixer-python 0.1.x matches a dashboard `enable` by name or by id (§2.7 `enable` row).
+
+Rows 54–61 (v0.7.1, [`D-2026-10-19-01`](./DECISIONS.md#2026-10-19)…`-04`): rows 54–59 are against ws-mixer-js
+0.11.2 (pins v0.6.3), row 60 against ws-mixer-mcpwarp 0.1.0, row 61 (informative) against mcpwarp/cli v0.2.7,
+against which row 50's v0.2.7 state is also measured.
 
 Not deviations (spec = HEAD, where earlier docs were wrong or silent): MCP pass-through (§4.7), inbound
 acceptance (§2.7), register backoff across reconnects (§3.2), the `/:\s+/g` colon rewrite (§7), decode defaults
@@ -1644,7 +1671,9 @@ field name `reason` (kept; an earlier draft said `cause`, D-2026-10-14-04).
 - [ ] `hello.meta.integration` = the integration product's assigned UUID (one constant per product, never generated per install or device, §2.4), lowercased; `X-Mcpwarp-Integration` equal to it when headers are possible.
 - [ ] `register` equal to §2.2 as a JSON value (canonical bytes SHOULD), one or more services, on every `welcome`.
 - [ ] Decode rules §2.8, including `url` required, `null` optional strings rejected, and rule 10's check order.
-- [ ] Transient and `OVERLOADED` backoff `min(1000 × 2^(n−1), 30000)` ms for the `n`-th consecutive, one counter, reset only by a successful reply (§2.6); the dropped frame re-sent every time, never "once".
+- [ ] Transient register backoff `min(1000 × 2^(n−1), 30000)` ms for the `n`-th consecutive all-transient reply, reset only by a successful reply, carried across reconnects (§3.2 Transient retry).
+- [ ] `OVERLOADED` re-send with its own counter: `min(1000 × 2^(n−1), 30000)` ms for the `n`-th consecutive `OVERLOADED`, reset by any non-`OVERLOADED` reply (§2.6); the dropped frame re-sent every time, never "once".
+- [ ] One `register`/`unregister` in flight; after `OVERLOADED` the slot stays reserved and `register` triggers during the pause fold into the one re-send, within 100 names; a settling reply (whole-frame `error` ops with any code but `OVERLOADED`/`CONNECTION_LIMIT` included) cancels every pending re-send timer (§2.6 One in flight).
 - [ ] Sticky conflict: never re-register; close the connection immediately (`error{NO_ERROR}` + `1000`, no grace); no `unregister`.
 - [ ] Only `/mcp`; precedence 404 > 503 > 413; error replies byte-exact; `413 Content Too Large`.
 - [ ] Never send `1xx`; flush each chunk; MCP headers passed through untouched.
@@ -1663,7 +1692,7 @@ field name `reason` (kept; an earlier draft said `cause`, D-2026-10-14-04).
 
 **SDK author (multi-service controller, §6A)**
 
-- [ ] Batches of 1..100 distinct names; one frame in flight; `OVERLOADED` re-sends the outstanding frame with backoff.
+- [ ] Batches of 1..100 distinct names; one frame in flight; `OVERLOADED` re-sends the outstanding frame with backoff, names enabled or added during the pause folded into that re-send within 100 names (§6A.7).
 - [ ] Every `welcome` re-registers the full list minus local removals, local disables and taken-over names.
 - [ ] Per-service states by §6A.5's precedence; a per-name `conflict` touches that name only and never re-registers it on its own.
 - [ ] Fatal only per G5 (`error`/`INTERNAL`, `No service could be registered.`); `SERVER_DISABLED` never fatal.

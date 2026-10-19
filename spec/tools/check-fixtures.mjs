@@ -1402,12 +1402,13 @@ const GROUP_ONLY_EVENTS = ["unregistered", "add_service", "remove_service", "ena
 const REGISTER_ERROR_CODES = mcpwarpSchemaDoc.$defs.registered.properties.errors.items.properties.code.enum;
 // MCPWARP.md §2.5 TRANSIENT_REGISTER_ERRORS: re-sent after the backoff, never a service state of their own.
 const TRANSIENT_REGISTER_CODES = ["INTERNAL", "NO_RESPONDERS", "TIMEOUT", "ABORTED", "CONNECTION_LOST", "MALFORMED_REPLY", "UNAVAILABLE", "SERVICE_ERROR"];
-// §6A.6 G7: whole-frame error ops that answer an outstanding register (any code but these three).
-const NOT_FRAME_ANSWERS = ["OVERLOADED", "CONNECTION_LIMIT", "UNSUPPORTED_VERSION"];
+// §2.6 One in flight: a whole-frame error op with any code but these two answers the outstanding frame.
+const NOT_FRAME_ANSWERS = ["OVERLOADED", "CONNECTION_LIMIT"];
 const GROUP_FATAL_LAST_ERROR = "No service could be registered.";
 const SERVICE_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 const SERVICE_KINDS = ["http", "stdio"];
-const groupOverloadDelay = (streak) => Math.min(1000 * 2 ** (streak - 1), 30000);
+// §2.6 / §3.2: the delay before the n-th consecutive re-send, for either counter.
+const groupBackoffDelay = (n) => Math.min(1000 * 2 ** (n - 1), 30000);
 // §6A.4 ServiceStatus lastError of a rejected service, by its wire code.
 function rejectedLastError(code) {
   if (code === "UNAUTHENTICATED") return TUNNEL_LAST_ERRORS.UNAUTHORIZED[0];
@@ -1431,9 +1432,9 @@ function checkGroupServiceList(list, where) {
   return names;
 }
 
-// Walks a group fixture's events: payload rules the vocabulary cannot state, the one-frame-in-flight rule,
-// registered/unregistered against the outstanding frame, the OVERLOADED backoff, and the facts a snapshot's
-// per-service state must be backed by. Returns those facts.
+// Walks a group fixture's events: payload rules the vocabulary cannot state, the one-frame-in-flight rule and
+// the slot an OVERLOADED reserves, registered/unregistered against the outstanding frame, the OVERLOADED and
+// transient backoffs, and the facts a snapshot's per-service state must be backed by. Returns those facts.
 function checkGroupEvents(fx, rel) {
   const facts = {
     known: new Set(),
@@ -1453,11 +1454,42 @@ function checkGroupEvents(fx, rel) {
   for (const n of configured) facts.known.add(n);
   check(!("name" in fx.config), `${rel}: a group config has services, not name`);
   let inFlight = null;
-  let dropped = null; // the frame an OVERLOADED dropped, until it is re-sent
-  let streak = 0; // §2.6 / §3.2 counter, per controller: kept across reconnects, reset by a reply with a non-transient entry
+  let dropped = null; // the frame an OVERLOADED dropped, its slot reserved until it is re-sent
+  let held = new Set(); // §3.3: names this connection received a services[] entry for and has not unregistered
+  let owedUnregister = null; // names left out of a re-send that the connection may hold: the next frame unregisters them
+  let overloadStreak = 0; // §2.6: consecutive OVERLOADEDs on this connection, reset by any other reply
+  let transientStreak = 0; // §3.2: consecutive all-transient registereds, kept across reconnects, reset by a non-transient entry or an unregistered
+  let lastAnswerTransient = false; // the last registered had a transient entry, so a register re-send is due
   let current = null; // the merged config of the last configure, null before it and after stop / dispose
   const endConnection = () => {
     inFlight = null;
+    dropped = null;
+    held = new Set();
+    owedUnregister = null;
+    overloadStreak = 0;
+    lastAnswerTransient = false;
+  };
+  // §2.6 One in flight: a register trigger during the OVERLOADED pause folds into the dropped register's re-send,
+  // after the dropped names, in trigger order.
+  const foldIn = (n) => {
+    if (!dropped || dropped.op !== "register" || typeof n !== "string") return;
+    dropped.leftOut.delete(n);
+    if (!dropped.names.includes(n) && !dropped.folded.includes(n)) dropped.folded.push(n);
+  };
+  // §2.6: a name removed or locally disabled during the pause is left out of the re-send.
+  const leaveOut = (n) => {
+    if (!dropped || dropped.op !== "register" || typeof n !== "string") return;
+    dropped.leftOut.add(n);
+    dropped.folded = dropped.folded.filter((f) => f !== n);
+  };
+  // §2.6: the re-send carries the dropped names in their order, minus those removed or locally disabled during the
+  // pause, then the folded-in names in trigger order.
+  const resendNames = () => [...dropped.names.filter((n) => !dropped.leftOut.has(n)), ...dropped.folded];
+  // The re-send went out, or had no names left and was not sent: the slot is free, and the left-out names the
+  // connection may hold are owed an unregister.
+  const releaseDropped = () => {
+    const owed = [...dropped.leftOut].filter((n) => held.has(n));
+    if (owed.length > 0) owedUnregister = [...new Set([...(owedUnregister ?? []), ...owed])];
     dropped = null;
   };
   // A configure restarts (redials) unless it changes only services: same trimmed token, enabled unchanged, every
@@ -1490,7 +1522,7 @@ function checkGroupEvents(fx, rel) {
         const next = { ...(current ?? fx.config), ...p };
         if (restarts(current, next)) {
           endConnection();
-          streak = 0;
+          transientStreak = 0;
         }
         current = next;
         break;
@@ -1498,7 +1530,7 @@ function checkGroupEvents(fx, rel) {
       case "stop":
       case "dispose":
         endConnection();
-        streak = 0;
+        transientStreak = 0;
         current = null;
         break;
       case "connected":
@@ -1513,6 +1545,7 @@ function checkGroupEvents(fx, rel) {
         check(!("kind" in p) || SERVICE_KINDS.includes(p.kind), `${where}: kind must be one of ${SERVICE_KINDS.join(", ")}`);
         configured.add(p.name);
         facts.known.add(p.name);
+        foldIn(p.name);
         break;
       case "remove_service":
       case "enable_service":
@@ -1523,6 +1556,8 @@ function checkGroupEvents(fx, rel) {
           configured.delete(p.name);
         }
         if (name === "disable_service") facts.disabledLocal.add(p.name);
+        if (name === "enable_service") foldIn(p.name);
+        else leaveOut(p.name);
         break;
       case "sent": {
         check(p.op === "register" || p.op === "unregister", `${where}: op must be register or unregister`);
@@ -1531,9 +1566,15 @@ function checkGroupEvents(fx, rel) {
         for (const n of names) check(facts.known.has(n), `${where}: ${JSON.stringify(n)} is not a configured service`);
         check(inFlight === null, `${where}: a ${p.op} is sent while ${inFlight ? `the ${inFlight.op} of [${inFlight.names.join(", ")}]` : ""} is still outstanding (one frame in flight per connection)`);
         if (dropped) {
+          // §2.6: the slot stays reserved, so the next frame is the dropped one's re-send.
+          const want = resendNames();
           check(dropped.retried, `${where}: the frame OVERLOADED dropped is re-sent before its retry {cause: "overloaded"}`);
-          check(dropped.op === p.op && JSON.stringify(dropped.names) === JSON.stringify(names), `${where}: after OVERLOADED the next frame is the dropped ${dropped.op} [${dropped.names.join(", ")}] again`);
-          dropped = null;
+          check(dropped.op === p.op && JSON.stringify(names) === JSON.stringify(want), `${where}: after OVERLOADED the next frame is the dropped ${dropped.op} re-sent with [${want.join(", ")}] in that order (dropped names first, then folded-in ones; removed or locally disabled ones left out), got ${p.op} [${names.join(", ")}]`);
+          releaseDropped();
+        } else if (owedUnregister) {
+          // §2.6: once the re-send is answered, the next frame unregisters the left-out names the connection may hold.
+          check(p.op === "unregister" && owedUnregister.every((n) => names.includes(n)), `${where}: after the re-send is answered the next frame is an unregister for [${owedUnregister.join(", ")}] (left out of the re-send, possibly held), got ${p.op} [${names.join(", ")}]`);
+          owedUnregister = null;
         }
         inFlight = { op: p.op, names };
         break;
@@ -1548,6 +1589,7 @@ function checkGroupEvents(fx, rel) {
           check(ok, `${where}.services[${j}]: needs name, id, url`);
           if (!ok) return;
           answered.push(s.name);
+          held.add(s.name);
           facts.active.add(s.name);
           learn(facts.ids, s.name, s.id);
           learn(facts.urls, s.name, s.url);
@@ -1570,8 +1612,11 @@ function checkGroupEvents(fx, rel) {
         }
         if (services.length === 0 && !errors.some((e) => isPlainObject(e) && e.code === "SERVER_DISABLED")) facts.fatalReply = true;
         inFlight = null;
-        // §2.6: the streak counts OVERLOADED and all-transient replies; any other entry ends it.
-        streak = nonTransient ? 0 : streak + 1;
+        // §2.6: any reply ends the OVERLOADED streak; §3.2: the transient streak counts all-transient replies and
+        // any non-transient entry ends it.
+        overloadStreak = 0;
+        transientStreak = nonTransient ? 0 : transientStreak + 1;
+        lastAnswerTransient = errors.some((e) => isPlainObject(e) && TRANSIENT_REGISTER_CODES.includes(e.code));
         break;
       }
       case "unregistered": {
@@ -1581,31 +1626,46 @@ function checkGroupEvents(fx, rel) {
           check(isPlainObject(s) && typeof s.name === "string" && typeof s.id === "string", `${where}.services[${j}]: needs name, id`);
           if (inFlight && isPlainObject(s)) check(inFlight.names.includes(s.name), `${where}.services[${j}]: ${JSON.stringify(s.name)} was not in the unregister`);
         });
+        if (inFlight) for (const n of inFlight.names) held.delete(n);
         inFlight = null;
-        streak = 0;
+        overloadStreak = 0;
+        transientStreak = 0;
         break;
       }
       case "app_error":
         if (p.code === "OVERLOADED") {
           check(inFlight !== null, `${where}: OVERLOADED with no register/unregister outstanding`);
-          if (inFlight) dropped = { ...inFlight, retried: false };
+          if (inFlight) dropped = { ...inFlight, retried: false, folded: [], leftOut: new Set() };
           inFlight = null;
-          streak++;
+          overloadStreak++;
         } else if (!NOT_FRAME_ANSWERS.includes(p.code)) {
           if (p.code === "TOO_MANY_SERVICES") check(inFlight !== null && inFlight.op === "register", `${where}: TOO_MANY_SERVICES answers an outstanding register`);
           // §6A.6 G7: the whole-frame refusal answers the outstanding frame; a register's names are rejected.
-          if (inFlight && inFlight.op === "register") {
+          // UNSUPPORTED_VERSION answers it too but is fatal (T24) and rejects nothing.
+          if (inFlight && inFlight.op === "register" && p.code !== "UNSUPPORTED_VERSION") {
             for (const n of inFlight.names) facts.rejected.add(`${n} ${p.code}`);
             facts.fatalReply = true;
           }
+          if (inFlight) overloadStreak = 0;
+          if (inFlight && inFlight.op === "unregister") for (const n of inFlight.names) held.delete(n);
           inFlight = null;
         }
         break;
       case "retry":
         if (p.cause === "overloaded") {
           check(dropped !== null && !dropped.retried, `${where}: an overloaded retry needs a frame OVERLOADED dropped`);
-          check(p.delayMs === groupOverloadDelay(streak), `${where}: the ${streak}. consecutive OVERLOADED / all-transient reply backs off ${groupOverloadDelay(streak)} ms, got ${p.delayMs}`);
-          if (dropped) dropped.retried = true;
+          check(p.delayMs === groupBackoffDelay(overloadStreak), `${where}: the ${overloadStreak}. consecutive OVERLOADED backs off ${groupBackoffDelay(overloadStreak)} ms, got ${p.delayMs}`);
+          if (dropped) {
+            dropped.retried = true;
+            // §2.6: a re-send with no names left is not sent; the slot is freed.
+            if (resendNames().length === 0) releaseDropped();
+          }
+        }
+        if (p.cause === "register") {
+          check(lastAnswerTransient, `${where}: a register retry needs a registered with a transient entry before it`);
+          // The delay after a reply mixing transient and other entries is not pinned here.
+          if (transientStreak > 0) check(p.delayMs === groupBackoffDelay(transientStreak), `${where}: the ${transientStreak}. consecutive all-transient reply backs off ${groupBackoffDelay(transientStreak)} ms, got ${p.delayMs}`);
+          lastAnswerTransient = false;
         }
         break;
       case "conflict":
@@ -1613,15 +1673,20 @@ function checkGroupEvents(fx, rel) {
         // §3.3: a conflict for a name never held (unconfigured, or configured but never registered) is ignored,
         // so it backs no taken_over.
         if (facts.known.has(p.name) && (facts.active.has(p.name) || facts.disabledDash.has(p.name))) facts.conflicts.add(p.name);
+        held.delete(p.name);
         break;
       case "disabled":
         check(typeof p.id === "string" && p.id !== "", `${where}: a group disable carries the service id`);
         facts.disabledIds.add(p.id);
         break;
-      case "enabled":
+      case "enabled": {
         check((typeof p.id === "string" && p.id !== "") || (typeof p.name === "string" && p.name !== ""), `${where}: a group enable carries an id, a name, or both`);
         if (typeof p.id === "string" && facts.known.has(p.name)) learn(facts.ids, p.name, p.id);
+        // §2.7: matched by name, else id; a locally disabled or taken_over name ignores it (approximated by "ever was").
+        const target = "name" in p ? p.name : [...facts.ids].find(([, ids]) => ids.has(p.id))?.[0];
+        if (configured.has(target) && !facts.disabledLocal.has(target) && !facts.conflicts.has(target)) foldIn(target);
         break;
+      }
     }
   });
   return facts;
@@ -1713,12 +1778,57 @@ if (!fs.existsSync(tunnelDir)) {
     check(group === path.basename(file).startsWith("ms_"), `${rel}: a group fixture (config.services) is named ms_NN_*.json, and only it`);
     const groupFacts = group ? checkGroupEvents(fx, rel) : null;
     if (!group) {
+      // §2.6: the OVERLOADED counter as in the group walk, reset by any other reply to the outstanding register.
+      let overloadStreak = 0;
+      let outstanding = false;
+      let dropped = false; // an OVERLOADED pause: the slot is reserved and an enable folds into the re-send
       fx.events.forEach((ev, i) => {
         const name = isPlainObject(ev) ? Object.keys(ev)[0] : undefined;
         check(!GROUP_ONLY_EVENTS.includes(name), `${rel}#events[${i}]: "${name}" is only for group fixtures`);
         if (name === "registered" && isPlainObject(ev.registered)) {
           const p = ev.registered;
           check(!("errors" in p) && (!Array.isArray(p.services) || p.services.every((s) => !isPlainObject(s) || !("name" in s))), `${rel}#events[${i}].registered: a single-service registered has no errors and no names (register_error instead)`);
+        }
+        const p = isPlainObject(ev) ? ev[name] : undefined;
+        if (!isPlainObject(p)) return;
+        switch (name) {
+          case "connected":
+          case "dial_failed":
+          case "disconnect":
+            overloadStreak = 0;
+            outstanding = false;
+            dropped = false;
+            break;
+          case "welcome":
+            overloadStreak = 0;
+            outstanding = true;
+            dropped = false;
+            break;
+          case "enabled":
+            if (!dropped) outstanding = true;
+            break;
+          case "registered":
+          case "register_error":
+            overloadStreak = 0;
+            outstanding = false;
+            break;
+          case "app_error":
+            if (p.code === "OVERLOADED") {
+              overloadStreak++;
+              outstanding = false;
+              dropped = true;
+            } else if (!NOT_FRAME_ANSWERS.includes(p.code) && outstanding) {
+              overloadStreak = 0;
+              outstanding = false;
+            }
+            break;
+          case "retry":
+            if (p.cause === "overloaded") {
+              check(p.delayMs === groupBackoffDelay(overloadStreak), `${rel}#events[${i}].retry: the ${overloadStreak}. consecutive OVERLOADED backs off ${groupBackoffDelay(overloadStreak)} ms, got ${p.delayMs}`);
+            }
+            if (p.cause === "register" || p.cause === "overloaded") outstanding = true;
+            if (p.cause === "overloaded") dropped = false;
+            break;
         }
       });
     }

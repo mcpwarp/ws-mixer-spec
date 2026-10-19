@@ -452,10 +452,14 @@ earns its keep, as the arbiter that keeps independent SDKs honest with each othe
    names and is never sent while another `register`/`unregister` is outstanding on the connection (answered by
    `registered`, `unregistered`, a whole-frame `app_error`, or dropped by `OVERLOADED`; a connection event or a
    restarting `configure` clears it, a `configure` that changes only `services` — same trimmed token, `enabled`
-   unchanged — does not redial and clears neither it nor the streak); after `OVERLOADED` the next `sent` repeats
-   the dropped frame and follows a `retry {cause: "overloaded"}` whose `delayMs` is `min(1000 × 2^(n-1), 30000)`
-   for the n-th consecutive `OVERLOADED` or all-transient `registered` (the streak reset by a `registered` with at
-   least one non-transient entry or by an `unregistered`); `add_service` names a valid name not currently
+   unchanged — does not redial and clears neither it nor either counter); after `OVERLOADED` the next `sent` is
+   the dropped frame's re-send and follows a `retry {cause: "overloaded"}` whose `delayMs` is
+   `min(1000 × 2^(n-1), 30000)` for the n-th consecutive `OVERLOADED` on the connection (reset by any other reply:
+   a `registered`, an `unregistered`, or a whole-frame `app_error` answering the frame), and the re-send carries
+   the dropped names in order, then names folded in during the pause in trigger order, leaving out names removed
+   or locally disabled; a `retry {cause: "register"}` after an all-transient `registered` waits
+   `min(1000 × 2^(n-1), 30000)` for the n-th consecutive one (reset by a `registered` with at least one
+   non-transient entry or by an `unregistered`); `add_service` names a valid name not currently
    configured (a removed or `taken_over`-then-removed name may come back); a `registered` lists exactly the outstanding `register`'s names,
    each once, named entries with `id` on an error only for `SERVER_DISABLED`; an `unregistered` lists only
    names of the outstanding `unregister`; `TOO_MANY_SERVICES` needs an outstanding `register`; `conflict` has a

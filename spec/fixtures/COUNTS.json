@@ -1,5 +1,5 @@
 {
   "_comment": "Checked-in floors for the number of *.json files under spec/fixtures/ (control + frames + sequences + mcpwarp) and, separately, under spec/fixtures/mcpwarp/, read by spec/tools/check-fixtures.mjs. CI fails if either corpus shrinks below its number. Bump them upward whenever fixtures are added; never lower them to make a regression pass.",
-  "minimum_total_fixtures": 282,
-  "minimum_mcpwarp_fixtures": 158
+  "minimum_total_fixtures": 285,
+  "minimum_mcpwarp_fixtures": 161
 }

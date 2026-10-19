@@ -566,6 +566,8 @@ on the wire and the CLI's tolerant merge by name is the model for the controller
   "not sent by the deployed edge"), §5.9 (Held `disable` row), §10.2, §10.6, §11 rows 51 and 52; envelope fixtures `register_batch_valid`, `register_batch_101_invalid`,
   `registered_partial_errors`, `unregistered_subset`, `conflict_per_name`; `spec/mcpwarp.schema.json`
   `services` `maxItems: 100`. See [`MCPWARP.md`](./MCPWARP.md#21-carrier).
+  Note (`D-2026-10-19-01`): "re-sent with the shared backoff" is superseded: a reply listing none of the frame's
+  names is re-sent with §3.2's transient backoff, and `OVERLOADED` keeps its own counter.
 - **D-2026-10-18-02** — Stream routing on a multi-service connection. No target rides `OPEN`; the agent selects
   the service from the request head: by `X-Mcpwarp-Server-Id` (header name case-insensitive) matched against
   `registered.services[].id` when present, with no fallback when it matches nothing; else by the `Host`
@@ -588,6 +590,7 @@ on the wire and the CLI's tolerant merge by name is the model for the controller
   `multi_service_unknown_service_non_mcp_404`.
   The "available from mcpwarp tunnel `<version>`" placeholder is filled in when mcpwarp-saas tags the release.
   See [`MCPWARP.md`](./MCPWARP.md#48-multi-service-routing).
+  Note (`D-2026-10-19-03`): the placeholder now reads "a future mcpwarp tunnel release (0.6.0 or later)".
 - **D-2026-10-18-03** — Multi-service controller profile and status vocabulary. `createServiceGroup(options)`
   with `configure({enabled, token, services: [{name, kind?, handler | target, targetTimeoutMs?}], url?,
   webSocket?})`, `stop()`, `dispose()`, `addService()`, `removeService()`, local `enable(name)`/`disable(name)`,
@@ -628,3 +631,93 @@ on the wire and the CLI's tolerant merge by name is the model for the controller
   silently loses a dropped `register` until the next reconnect. Changed: `MCPWARP.md` §2.6 (`OVERLOADED` row,
   Frames in flight), §3.2 Transient retry, §5.9, §6.7 T15, §6A.7, §11 row 49, §12; tunnel fixtures for the `OVERLOADED` re-send and the whole-frame refusal. See
   [`MCPWARP.md`](./MCPWARP.md#26-errorcode).
+  Note (`D-2026-10-19-01`): the counter shared by `OVERLOADED` and all-transient replies is superseded: `OVERLOADED`
+  has its own counter, reset by any other reply, and transient refusals keep §3.2's register backoff.
+
+## 2026-10-19
+
+Clarifications after the v0.7.0 implementation round: no wire change, no new status code, no new locale key.
+The rulings were given to the SDK sessions by message on 2026-10-18 and 2026-10-19 and bind from then; this
+section records them as text. Sources: the ws-mixer-python v0.7.0 audit, ws-mixer-js 0.11.2 (shipped
+2026-10-18) and its 0.11.3 plan, the `ws-mixer-mcpwarp` 0.1.1 audit (Rust), ws-mixer-go v0.9.1 (`f522835`) and
+the v0.10.0 review, and mcpwarp/cli v0.2.7 (`70a867a`). Anatoly approved the edge header change of
+`D-2026-10-18-02` in the mcpwarp-saas session, to be built after this release. Ships as spec `v0.7.1`.
+
+- **D-2026-10-19-01** — Frames in flight. Two counters: `OVERLOADED` has its own, `n` = consecutive `OVERLOADED`
+  replies on the connection, delay `min(1000 × 2^(n−1), 30000)` ms, reset by any non-`OVERLOADED` reply (a
+  `registered`, an `unregistered`, a whole-frame `error` op); transient refusals keep §3.2's register backoff
+  (1 s doubling, cap 30 s, reset on a successful register, carried across reconnects; a restart through
+  `configure()` or a `stop()` starts a new one; after a reply mixing transient and non-transient entries it is
+  reset and the transient names wait the n = 1 delay). One in flight holds in
+  normal operation: a trigger while a frame is outstanding queues until the reply; after `OVERLOADED` the slot
+  stays reserved and triggers during the pause fold into the one re-send (the frame is re-queued, not released).
+  Only `register` triggers fold, into the re-send of a dropped `register`, within 100 names: the dropped frame's
+  names first in their order, then the folded-in names in trigger order; a name removed or locally disabled
+  during the pause is left out, and its `unregister`, if the connection may hold it, queues behind the re-send;
+  any other trigger queues behind it. A `register` dropped by `OVERLOADED` was never processed, so a name carried
+  only by a dropped frame is not held and gets no `unregister`. A re-send with no names left is not sent and
+  frees the slot; with nothing outstanding or queued, a `connecting` group is evaluated as G1's "nothing to
+  send" (`online` at once unless G5 holds) and an `online` group is unchanged (G4).
+  Any reply that settles the frame cancels every pending re-send timer for it. A whole-frame `error` op with any
+  code other than `OVERLOADED` and `CONNECTION_LIMIT`, unknown codes included, answers the outstanding frame;
+  `UNSUPPORTED_VERSION` is then fatal (T24); single-service: T25, nothing re-sent; multi-service: G7. One that
+  answers an outstanding `unregister` settles it like an `unregistered`: the frame's names leave the
+  controller's held set, logged `warn`. A
+  `registered` listing none of the frame's names is re-sent with the transient backoff in both profiles.
+  `close()` MAY send its `unregister` while a `register` is outstanding; its wait ends on the `unregister`'s own
+  reply by frame order (an `unregistered`, or a whole-frame `error` op whose turn it is) or the 2000 ms cap;
+  while closing, a `register` dropped by `OVERLOADED` is abandoned, never re-sent, and duplicate `unregister`s
+  are harmless. One controller owns a connection's mcpwarp ops; a host multiplexing several on one connection
+  serializes their frames and routes each reply by frame order, never by name. Reason: the Python audit found
+  the v0.7.0 counter merging `OVERLOADED` with all-transient replies (fixture `26_t16` already expects 1000 ms
+  for an `OVERLOADED` right after a transient retry); JS and Python both sent a third `register` from a stale
+  timer after success; Rust 0.1.0 had the same gaps (§11 row 60); Rust's questions on the close wait, a
+  single-service whole-frame error and several controllers per connection; the Go v0.10.0 review's close wait
+  by frame order. The review of the v0.7.1 draft asked for the fold-in's scope and order and for the transient
+  counter's restart and mixed-reply delay; Anatoly ruled that a whole-frame `error` op answering an `unregister`
+  settles it. A dropped frame left no state on the edge, so an `unregister` for its names would be a wasted
+  frame; an emptied re-send gets no reply to drive G2, so without G1's rule a `connecting` group would wait for
+  the next `welcome`. Changed: `MCPWARP.md` §2.3 Empty reply, §2.6
+  (`TOO_MANY_SERVICES` row, One in flight: fold-in scope and order, emptied re-send, `OVERLOADED` re-send), §2.7
+  (`registered`, `enable` and `unregistered` rows, multi-service `unregistered` and `error` rows), §3.2
+  (Transient retry: restart and mixed reply, `OVERLOADED`, new One controller per connection row, Unregister),
+  §5.7 step 2, §5.9 `onRetry` special cases, §6.7 T13, T25, T26, §6A.2 (may hold), §6A.6 (G7, Emptied
+  re-send), §6A.7 (One in flight, Correlation, Backoff counter), §6A.8, §10.6 (`app_error` row), §12; tunnel
+  fixtures `ms_12_overloaded_reserved_slot_fold_in`, `ms_13_transient_then_overloaded_separate_counters` and
+  `ms_14_overloaded_all_removed_no_resend`; the group
+  checker's two streaks and the single-service `OVERLOADED` delay check. See
+  [`MCPWARP.md`](./MCPWARP.md#26-errorcode).
+- **D-2026-10-19-02** — Held `disable` and per-name `conflict`. A held `disable` is also cleared by a replacement
+  connection's `welcome` (drain hand-over), besides a matching `enable` (by name or id), a take-over of the name
+  and the connection's end. When a later `registered` brings the held id, the registration is recorded (url,
+  id, `registered` event) and the hold then applies (`disabled` event), back to back; the tunnel shows one
+  `disabled` snapshot (T50). A connection "holds" a name once it received a `services[]` entry for it; a
+  `conflict` for a name only in an outstanding `register`, or known only through `SERVER_DISABLED.id` or
+  `enable`, is ignored. Informative: an agent MAY also reset that service's in-flight streams locally. Reason:
+  Python and JS 0.11.2 already clear holds on the replacement's `welcome`; the Go v0.10.0 review needed rulings
+  on whether the registration counts and which names a `conflict` can reach. Changed: `MCPWARP.md` §2.7 (Unknown `disable`
+  id, Held `disable` lifetime, multi-service `conflict` row), §3.3 Per name, §5.4 (`disable` row: `registration`
+  present after a held `disable`), §5.9 Held `disable`. See
+  [`MCPWARP.md`](./MCPWARP.md#27-inbound-acceptance).
+- **D-2026-10-19-03** — Profile and transport clarifications. A single-service handle never selects by `Host`:
+  every `/mcp` request reaching a registered handle goes to its handler; §4.8's selection is the multi-service
+  controller's only. Informative: an SDK MAY clamp any computed delay (backoff, `drain.retry_after_ms`,
+  `Retry-After`) to its runtime's timer maximum (JS and Python: 2^31−1 ms). Phase is decided by order: a
+  `welcome` followed by a close in the same delivery burst is a connected-phase disconnect, and the SDK never
+  exposes that connection as current. The §4.8 Trust gate placeholder reads "a future mcpwarp tunnel release
+  (0.6.0 or later)"; the header change is approved and built after this release, and the version is filled in
+  once the tunnel tags it. Reason: Rust proposed the §4.4 note for single-service handles; Python and JS clamp
+  retry hints; JS 0.11.2 reported a same-burst close as `handshake` (§11 row 59). Changed: `MCPWARP.md` §4.4,
+  §4.8 Trust gate, §5.9 (Timer clamp row); `CLIENT-SDK.md` Reconnect / backoff, Disconnect reason shape. See
+  [`CLIENT-SDK.md`](./CLIENT-SDK.md).
+- **D-2026-10-19-04** — Implementation status, naming and deviations. §9 Go: the tunnel's token provider is
+  `TunnelConfig.TokenSource` (an interface compared by `==`, like the socket factory) with the
+  `TokenSourceFunc` adapter, and `ServiceGroupConfig.TokenSource` likewise; the §9.2 Go names are confirmed as
+  written; `ServiceStatus.Code` is a plain string, the group's `Code` a `StatusCode`. §11: JS rows 18, 19, 24,
+  25 fixed in 0.11.1 and rows 20–23, 26–31, 47, 52, 53 in 0.11.2, new rows 54–59 for 0.11.3; Go rows 40, 41
+  (`TokenSource`) and 46 fixed in ws-mixer-go v0.9.1; Rust rows 42 and 44 fixed in
+  `ws-mixer-mcpwarp` 0.1.1, new row 60; Python rows 45 and 48 implemented in ws-mixer-python 0.1.x
+  (unreleased, pins v0.7.0); Go CLI row 49 for the release that integrates ws-mixer-go v0.10.0, row 50 partly
+  fixed in v0.2.7, new informative row 61 (state vocabulary). Reason: every SDK session reported against v0.7.0
+  or its v0.6.3 pin. Changed: `MCPWARP.md` §9, §9.2, §11. See
+  [`MCPWARP.md`](./MCPWARP.md#11-deviations-from-sdk-heads).
