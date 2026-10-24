@@ -591,6 +591,8 @@ on the wire and the CLI's tolerant merge by name is the model for the controller
   The "available from mcpwarp tunnel `<version>`" placeholder is filled in when mcpwarp-saas tags the release.
   See [`MCPWARP.md`](./MCPWARP.md#48-multi-service-routing).
   Note (`D-2026-10-19-06`): the placeholder is filled: "mcpwarp tunnel 0.6.0".
+  Note (`D-2026-10-24-01`): superseded in part: `trustServerIdHeader` is the host controller's option, not an
+  SDK option, and §9.2's names are informative.
 - **D-2026-10-18-03** — Multi-service controller profile and status vocabulary. `createServiceGroup(options)`
   with `configure({enabled, token, services: [{name, kind?, handler | target, targetTimeoutMs?}], url?,
   webSocket?})`, `stop()`, `dispose()`, `addService()`, `removeService()`, local `enable(name)`/`disable(name)`,
@@ -617,7 +619,9 @@ on the wire and the CLI's tolerant merge by name is the model for the controller
   and the redial), §6A (new), §7 (data files row), §6.6 (one row), §9.2 (new), §10.6, §11 rows 50 and 53, §12;
   `CLIENT-SDK.md` Rejected token row; status-text locale files and `rules.json` `newInSpec`;
   tunnel fixtures `ms_01_…` onward. See
-  [`MCPWARP.md`](./MCPWARP.md#6a-sdk-profile-multi-service-controller-tier-2).
+  [`MCPWARP.md`](./MCPWARP.md#6a-multi-service-hosts-informative).
+  Note (`D-2026-10-24-01`): superseded in part: §6A is informative guidance for hosts, no SDK ships
+  `createServiceGroup`, and the seven status-text keys are OPTIONAL in an SDK's tables.
 - **D-2026-10-18-04** — One frame in flight and the `OVERLOADED` re-send. An agent keeps at most one
   `register`/`unregister` outstanding per connection; the next goes out after the reply, a whole-frame `error`
   op for it, or the connection's end. `OVERLOADED` means the frame was dropped unprocessed (per-pod semaphore
@@ -688,6 +692,8 @@ the v0.10.0 review, and mcpwarp/cli v0.2.7 (`70a867a`). Anatoly approved the edg
   `ms_14_overloaded_all_removed_no_resend`; the group
   checker's two streaks and the single-service `OVERLOADED` delay check. See
   [`MCPWARP.md`](./MCPWARP.md#26-errorcode).
+  Note (`D-2026-10-24-01`): superseded in part: the group rules here (G1, G4, G7, the held set) are §6A's
+  recommendations for hosts; the frames-in-flight rules stay wire tier.
 - **D-2026-10-19-02** — Held `disable` and per-name `conflict`. A held `disable` is also cleared by a replacement
   connection's `welcome` (drain hand-over), besides a matching `enable` (by name or id), a take-over of the name
   and the connection's end. When a later `registered` brings the held id, the registration is recorded (url,
@@ -754,3 +760,79 @@ the v0.10.0 review, and mcpwarp/cli v0.2.7 (`70a867a`). Anatoly approved the edg
   mcpwarp/cli v0.2.5 fixed §11 row 51. Reason: mcpwarp-saas built the approved header change as tunnel 0.6.0, and
   the SDK sessions reported against `v0.7.1`. Changed: `MCPWARP.md` header, §4.8 (Edge headers, Trust gate),
   §9.2, §11 (rows 49–51 paragraph, rows 51 and 54–59). See [`MCPWARP.md`](./MCPWARP.md#48-multi-service-routing).
+
+## 2026-10-24
+
+Project owner's decisions. Anatoly decided on 2026-10-24, in the spec session, that no SDK ships a
+multi-service controller (`D-2026-10-24-01`), and on 2026-10-23, answering the CLI's question, that `/mcp`-only
+forwarding stays for every host (`-02`). `-03` records the small rulings given to the SDK and server sessions by
+message after `v0.7.2`; `-04` the implementation status. No change to frames or the envelope, no new status code, no fixture removed.
+Ships as spec `v0.8.0` (minor: a scope change).
+
+- **D-2026-10-24-01** — §6A is informative; no SDK ships a multi-service controller. Every SDK has the same
+  single-service scope (`expose()`, the tunnel controller); publishing several services on one connection is the
+  job of a multi-service host (the mcpwarp CLI in Go, mcpwarp desktop in Rust), which builds its own controller
+  on the wire tier. §6A becomes "Multi-service hosts (informative)": the recommended controller for such a host,
+  as an SDK-independent algorithm; its RFC keywords are recommendations for hosts. The wire-tier rules a host
+  cannot avoid stay normative where they are: batches of 1..100 (§2.1 Batch), additive `register` and per-name
+  replies (§2.3), one frame in flight and the `OVERLOADED` re-send (§2.6), the `disable`/`enable` shapes and
+  per-name matching (§2.7), re-register on every `welcome` and host-side serialization of several controllers
+  (§3.2), per-name take-over (§3.3), routing headers and the Trust gate (§4.8). `trustServerIdHeader` is the
+  host controller's option; an SDK does no routing and has none. Reason: the owner's — every SDK gets one scope,
+  so there is no exception to remember (cognitive load). Consequences: ws-mixer-go v0.11.0 removes its
+  `ServiceGroup` controller (`NewServiceGroup`, `ServiceGroup*`, `ServiceConfig`, `ServiceState`,
+  `ServiceStatus`, `ServiceGroupStatus`, `DescribeServiceStatus`, `StatusMessages.Services`, the group fixture
+  runner, the `service.*` status-text tables) and keeps the wire helpers hosts build on (`RegisterEntry`,
+  `EncodeRegisterList`, `EncodeUnregisterList`, `MaxServicesPerMessage`, the per-name decoded ops,
+  `ServerIDHeader`/`ServerNameHeader`); the CLI builds its own layer (v0.3.0); mcpwarp desktop multiplexes
+  host-side. Fixtures are reclassified, none removed: host guidance (SDK runners skip it by default) is tunnel
+  `ms_01`..`ms_14`, the four `multi_service_*` bridging fixtures, the encode side of envelope
+  `register_batch_valid` and `register_two_services`, the status-text `cases.json` cases with `input.service` and
+  the two group cases using `lastError.NO_SERVICE_REGISTERED` (`rules.json` `hostOnlyCases`), and the keys
+  `service.*` and `lastError.NO_SERVICE_REGISTERED` (`rules.json` `hostOnly`, OPTIONAL in an SDK's tables);
+  everything else stays SDK conformance, every envelope decode case included. Supersedes in part
+  `D-2026-10-18-02`, `D-2026-10-18-03` and `D-2026-10-19-01` (a note on each). Changed: `MCPWARP.md` header,
+  Terms, §1, §2.1 (One service per message), §2.6 (`TOO_MANY_SERVICES` row, One in flight: pointers to §6A
+  marked informative), §2.7 (multi-service `conflict` row), §3.2 (One controller per connection), §3.3 (Per name:
+  clearing a take-over is the application's local decision), §4.4, §4.8 (step 1 wording, Trust gate, a note
+  under the precedence table), §6.6 (one row), §6A (title, intro, §6A.7 Correlation, §6A.8, §6A.9), §7,
+  §9 (wire helper rows, the Go `DescribeStatus` cell), §9.2 (table removed, informative note), §10.1, §10.2, §10.5, §10.6 (Fixture status),
+  §11 (rows 49–51 and 61 as host notes, the SDK paragraph), §12 (host checklist); `spec/README.md` (Fixture
+  classification), `tunnel/README.md`, status-text `rules.json` (`hostOnly`, `hostOnlyCases`) and `cases.json`
+  description, `check-fixtures.mjs` comments. See [`MCPWARP.md`](./MCPWARP.md#6a-multi-service-hosts-informative).
+- **D-2026-10-24-02** — `/mcp`-only forwarding (§4.3) stays for every host, multi-service hosts included: no
+  per-service path option. Decided by the owner on 2026-10-23, answering the CLI session. The CLI's v0.3.0
+  documents it as a breaking change: legacy `/sse`, `/messages` and custom paths move to `/mcp`. Reason: the
+  owner's — the same model as the Anki tunnel's single `/mcp` endpoint. Changed: `MCPWARP.md` §6A intro and §12
+  host checklist (pointers only; §4.3 already says it). See [`MCPWARP.md`](./MCPWARP.md#43-path-rule).
+- **D-2026-10-24-03** — Small rulings. (1) During an `OVERLOADED` pause an empty `registered` or an `error` op
+  answers nothing and leaves the `OVERLOADED` counter unchanged (the next `OVERLOADED` is n + 1); "resets on any
+  non-`OVERLOADED` reply" means a reply that answers the outstanding frame (ruled 2026-10-23 for ws-mixer-python).
+  (2) A server SHOULD NOT send `retry_after_ms` above 60 000 ms; informative: the deployed mcpwarp tunnel sends
+  none on a drain (both of its drain paths set a deadline of at most 25 s, no `retry_after_ms`, not
+  configurable, unchanged in tunnel 0.6.0), and its only `Retry-After` is the HTTP `503` at the upgrade, fixed
+  5 s (ruled 2026-10-23 for ws-mixer-server; facts from mcpwarp-saas). (3) Frames received between `welcome` and
+  the attachment of the connection as current are queued and delivered, not dropped (from ws-mixer-go
+  `D-2026-10-23-01`, its own log: a `drain` in that window was closed as stale and the client redialed per the
+  close instead of handing over; rare, timing only). (4) A server-only consumer's `js.pin` names a ws-mixer-js
+  release whose `spec.pin` is at least the consumer's `spec.pin`, ignoring spec tags that change only the
+  mcpwarp layer (ruled 2026-10-23 for ws-mixer-server). Reason: questions from the Python, Go and ws-mixer-server
+  sessions after `v0.7.2`. Changed: `MCPWARP.md` §2.6 `OVERLOADED` re-send, §5.9 (`onRetry` special cases),
+  §6A.7 (Correlation, Backoff counter), §12 (Tier 1 `OVERLOADED` item); `WIRE.md` §2.9
+  Client side of a drain (Replacement dial); `CLIENT-SDK.md` Handler delivery; `REPOS.md` Pin / tag policy. See
+  [`MCPWARP.md`](./MCPWARP.md#26-errorcode).
+- **D-2026-10-24-04** — Implementation status. ws-mixer-go v0.10.1 (`690968e`, `spec.pin` `v0.7.2`,
+  2026-10-24) places a name removed and re-added within one `OVERLOADED` pause among the folded-in names in
+  trigger order (§11 row 62), makes `Stream.Reset` reject connection-only codes locally (sentinel
+  `wsmixer.ErrResetCode`; WIRE.md §2.8's SHOULD binds both roles, §11 row 63), handles a `GOING_AWAY`/`1000`
+  close after a received `drain` as the hand-over even when the close is observed before the drain message, and
+  retires a stream on `Reset`/`CloseWrite` before queuing the frame; ws-mixer-go v0.11.0 removes `ServiceGroup`
+  (`-01`). mcpwarp tunnel 0.6.0 is live in production since 2026-10-24 (mcpwarp-saas `1025905`, chart 0.10.0,
+  infra `c7fb7ac`, 3 pods): operators may turn `trustServerIdHeader` on. Rust `ws-mixer-mcpwarp` 0.1.1 pins
+  `v0.7.2` at ws-mixer-rust `636a3b0`, tag not cut yet; its three fixes for the `v0.7.2` single-service rules
+  are pre-tag, so §11 row 60 stays "fixed in ws-mixer-mcpwarp 0.1.1". ws-mixer-js 0.11.3 (`fbcc862`) is
+  unchanged. mcpwarp/cli v0.2.5 fixed §11 row 51 and v0.2.7 row 50 in part; rows 49 and 50's rest move to the
+  CLI's own layer, v0.3.0. ws-mixer-python pins `v0.7.2`, green, with two behaviour fixes (the `close()` skip
+  condition; an empty `registered` during the pause), unreleased: §11 rows 45 and 48 unchanged. Changed:
+  `MCPWARP.md` §4.8 Trust gate (tunnel 0.6.0 live), §11 (rows 49–50 action, new rows 62–63). See
+  [`MCPWARP.md`](./MCPWARP.md#11-deviations-from-sdk-heads).

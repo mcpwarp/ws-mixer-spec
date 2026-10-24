@@ -1,14 +1,15 @@
 {
-  "description": "describeStatus rules for the normative status text tables (docs/MCPWARP.md section 7). One table file per locale (en.json, de.json, es.json, fr.json, ja.json, zh-CN.json), every one with exactly the key set of en.json; cases.json holds input -> expected examples every SDK runs.",
+  "description": "describeStatus rules for the normative status text tables (docs/MCPWARP.md section 7). One table file per locale (en.json, de.json, es.json, fr.json, ja.json, zh-CN.json), every one with exactly the key set of en.json; cases.json holds input -> expected examples every SDK runs, except hostOnlyCases (below); the hostOnly keys are optional in an SDK's tables.",
   "keyFormat": {
     "pattern": "^((off|connecting|online|disabled|conflict|error)\\.(none|[A-Z][A-Z_]*)|service\\.(pending|active|disabled|rejected|taken_over|unregistered)|lastError\\.NO_SERVICE_REGISTERED)$",
-    "rule": "<state>.<code>, with the literal 'none' when the status carries no code. The <state>.<code> keys of en.json are exactly the legal (state, code) pairings of a TunnelStatus; since v0.7.0 the seven multi-service keys (multiService below) follow them.",
+    "rule": "<state>.<code>, with the literal 'none' when the status carries no code. The <state>.<code> keys of en.json are exactly the legal (state, code) pairings of a TunnelStatus; since v0.7.0 the seven multi-service keys (multiService below) follow them, host-only since v0.8.0 (hostOnly below).",
     "value": "{label, detail?} = describeStatus({state, code}) with no lastError. detail is left out when it would equal label.",
     "stateLabel": "states[state] = label of any <state>.<code> key starting with '<state>.'; every key of one state has the same label",
     "codeSentence": "codes[code] = detail ?? label of any <state>.<code> key ending in '.<code>'; every key of one code has the same sentence (INTERNAL pairs with connecting and error, and connecting.INTERNAL and error.INTERNAL carry the same sentence in every locale)"
   },
   "multiService": {
     "source": "docs/MCPWARP.md section 6A.9",
+    "scope": "Since v0.8.0 informative host guidance (D-2026-10-24-01): no SDK ships a multi-service controller. The keys in hostOnly are OPTIONAL in an SDK's tables and an SDK runner compares only the other keys; the locale files keep them, with their values, for hosts (CLI, desktop) that multiplex several services on one connection.",
     "serviceLabels": "service.<state> = {label} for each ServiceState: pending, active, disabled, rejected, taken_over, unregistered",
     "noServiceRegistered": "lastError.NO_SERVICE_REGISTERED = {label: the locale's error label, detail} = describeStatus({state: \"error\", code: \"INTERNAL\", lastError: \"No service could be registered.\"})",
     "describeStatusRule": "state error, code INTERNAL and lastError exactly \"No service could be registered.\": detail = the lastError.NO_SERVICE_REGISTERED detail instead of the INTERNAL sentence; services is ignored",
@@ -83,5 +84,7 @@
     "fr:service.pending", "fr:service.active", "fr:service.disabled", "fr:service.rejected", "fr:service.taken_over", "fr:service.unregistered", "fr:lastError.NO_SERVICE_REGISTERED",
     "ja:service.pending", "ja:service.active", "ja:service.disabled", "ja:service.rejected", "ja:service.taken_over", "ja:service.unregistered", "ja:lastError.NO_SERVICE_REGISTERED",
     "zh-CN:service.pending", "zh-CN:service.active", "zh-CN:service.disabled", "zh-CN:service.rejected", "zh-CN:service.taken_over", "zh-CN:service.unregistered", "zh-CN:lastError.NO_SERVICE_REGISTERED"
-  ]
+  ],
+  "hostOnly": ["service.pending", "service.active", "service.disabled", "service.rejected", "service.taken_over", "service.unregistered", "lastError.NO_SERVICE_REGISTERED"],
+  "hostOnlyCases": "a cases.json case with input.service (describeServiceStatus), or whose input.status carries services (the two lastError.NO_SERVICE_REGISTERED group cases), is host-only: an SDK runner skips it unless the implementation declares host support"
 }

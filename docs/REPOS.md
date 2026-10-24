@@ -9,7 +9,7 @@
 | `ws-mixer-js` | public | Apache-2.0 | npm `@mcpwarp/ws-mixer` + its conformance adapter |
 | `ws-mixer-rust` | public | Apache-2.0 | crate `ws-mixer` (Rust client) + its conformance adapter, and the sibling crate `ws-mixer-mcpwarp` (the mcpwarp layer, [`MCPWARP.md`](./MCPWARP.md)) |
 | `ws-mixer-server` | private (AGPL-3.0 if opened) | AGPL-3.0 | Go module `github.com/mcpwarp/ws-mixer-server` — HTTP/upgrade layer, auth policy, server ops |
-| `ws-mixer-python` | — | — | placeholder for a Python client SDK, out of scope today |
+| `ws-mixer-python` | — | Apache-2.0 | Python package `ws-mixer` — asyncio client + its conformance adapter + the mcpwarp layer ([`MCPWARP.md`](./MCPWARP.md)); unreleased |
 
 This repo owns nothing implementation-specific: no server, no client, no adapters. It owns the contract
 every implementation is validated against.
@@ -38,6 +38,11 @@ every implementation is validated against.
 - **The first five repos (all but `ws-mixer-rust`, added later) started at `v0.3.0`**, cut the same day, as one coherent, mutually-tested set. After that
   each repo's tags float independently; a consumer only moves when it bumps its `spec.pin` (or, for
   `ws-mixer-go`, `goserver.pin` in `ws-mixer-js`) on purpose.
+- **Server-only consumers** (today `ws-mixer-server`): the `js.pin` must name a ws-mixer-js release whose own
+  `spec.pin` is at least the consumer's `spec.pin`, where a spec tag whose changes are confined to the mcpwarp
+  layer ([`MCPWARP.md`](./MCPWARP.md), `spec/mcpwarp.schema.json`, `spec/fixtures/mcpwarp/`, and
+  [`DECISIONS.md`](./DECISIONS.md) entries about them) counts as equal to the tag before it
+  ([`D-2026-10-24-03`](./DECISIONS.md#2026-10-24)).
 - **Go module versions stay in `v0`** for now — no `/vN` suffix needed until a `v2`.
 - **The conformance runner is a package of this repo's root module**, at `./conformance/runner` — not a
   nested module. A plain repo tag (`v0.3.0`) is therefore enough to pin the runner too; a consumer runs it

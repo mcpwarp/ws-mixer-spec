@@ -1,5 +1,5 @@
 {
-  "description": "describeStatus(input.status, {locale: input.locale}), or describeServiceStatus(input.service, {locale: input.locale}) for a case with input.service (MCPWARP.md §6A.9, multi-service SDKs only), must return exactly expect (detail absent when not listed). Rules in rules.json; tables in <locale>.json. A locale of null means the option is absent.",
+  "description": "describeStatus(input.status, {locale: input.locale}), or describeServiceStatus(input.service, {locale: input.locale}) for a case with input.service (MCPWARP.md §6A.9), must return exactly expect (detail absent when not listed). A case with input.service, or whose input.status carries services, is host-only per rules.json hostOnlyCases and skipped by SDK runners. Rules in rules.json; tables in <locale>.json. A locale of null means the option is absent.",
   "cases": [
     {
       "description": "online with a url: label only, in en",

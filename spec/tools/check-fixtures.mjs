@@ -971,7 +971,7 @@ function sameJson(a, b) {
   return JSON.stringify(sort(a)) === JSON.stringify(sort(b));
 }
 
-// MCPWARP.md §4.8 multi-service selection. Step 1, only with the SDK option trustServerIdHeader (default
+// MCPWARP.md §4.8 multi-service selection. Step 1, only with the host's option trustServerIdHeader (default
 // off; a fixture that needs it carries runnerRequirement "trust-server-id-header"): an X-Mcpwarp-Server-Id
 // header (name matched case-insensitively, parseHttpMessage lower-cases names; the first if repeated)
 // selects the service with that registered id, or none, with no fallback. Step 2: else the Host's first
@@ -1395,7 +1395,8 @@ function collectConfigs(events, out) {
   return out;
 }
 
-// --- group (multi-service controller) fixtures: tunnel/README.md "Group fixtures" ---
+// --- group (a host's multi-service controller) fixtures: tunnel/README.md "Group fixtures"; host guidance
+// since v0.8.0, still validated here ---
 
 const GROUP_SERVICE_STATES = ["pending", "active", "disabled", "rejected", "taken_over", "unregistered"];
 const GROUP_ONLY_EVENTS = ["unregistered", "add_service", "remove_service", "enable_service", "disable_service", "sent"];
@@ -1900,7 +1901,8 @@ function checkStatusString(s, where) {
 if (!fs.existsSync(statusTextDir)) {
   mcpwarpNotes.push("fixtures/mcpwarp/status-text/ missing, skipped");
 } else {
-  // MCPWARP.md §6A.9: the seven multi-service keys sit beside the <state>.<code> pairings.
+  // MCPWARP.md §6A.9: the seven multi-service keys (host-only, rules.json hostOnly) sit beside the
+  // <state>.<code> pairings.
   const SERVICE_TEXT_KEYS = GROUP_SERVICE_STATES.map((s) => `service.${s}`);
   const NO_SERVICE_KEY = "lastError.NO_SERVICE_REGISTERED";
   const MULTI_TEXT_KEYS = [...SERVICE_TEXT_KEYS, NO_SERVICE_KEY];

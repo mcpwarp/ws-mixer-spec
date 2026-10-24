@@ -250,6 +250,25 @@ protocol-correct for the same reason but is not fully drivable by every harness 
 conformance runner never reads it (it loads `fixtures/sequences/` only, non-recursively); each mcpwarp SDK runs
 it in its own CI. Where this section and MCPWARP.md disagree, MCPWARP.md wins.
 
+**Fixture classification (since v0.8.0, D-2026-10-24-01).** No SDK ships a multi-service controller; MCPWARP.md
+§6A is informative guidance for hosts (CLI, desktop) that multiplex several services on one connection. The
+mcpwarp fixtures therefore fall into two classes:
+
+- **Host guidance** (SDK runners skip them by default; a host may run them through its own adapter): tunnel
+  `ms_01`..`ms_14`; bridging `multi_service_route_by_header`, `multi_service_route_by_host`,
+  `multi_service_unknown_service_503`, `multi_service_unknown_service_non_mcp_404`; the encode side of envelope
+  `register_batch_valid` and `register_two_services` (their schema verdict still runs); the
+  status-text `cases.json` cases with `input.service` and the two group cases using
+  `lastError.NO_SERVICE_REGISTERED` (`rules.json` `hostOnlyCases`); the status-text keys `service.*` and
+  `lastError.NO_SERVICE_REGISTERED` (`rules.json` `hostOnly`, optional in an SDK's tables).
+- **SDK conformance** (unchanged): every envelope decode case, including multi-entry `registered` /
+  `unregistered` and the per-name `conflict_per_name` (an SDK ignores entries for other names, MCPWARP.md §2.3);
+  `register_batch_101_invalid` (schema); every other bridging fixture; tunnel `01`..`45`; the status-text
+  `<state>.<CODE>` keys and the other `cases.json` cases.
+
+Every fixture stays in the corpus and `check-fixtures.mjs` validates all of them; the classification only says
+who runs them.
+
 ### `mcpwarp.schema.json` and `envelope/`
 
 An instance is the value of `body.mcpwarp` inside an `app` control message, not the `app` message. Top level is
@@ -310,8 +329,7 @@ expected status (`_404`), except `mcp_post_ok`, `notification_passthrough` and t
 without a status suffix (200), `head_mcp_400_headonly` (400), and the `outReset` fixtures, which end in `_reset`. A stream answered `404`/`503` with request body bytes still unread ends with
 CLOSE after the SDK drains the body, never RESET, also when the body turns out malformed (MCPWARP.md §4.4).
 
-**Multi-service (`multi_service_*.json`, MCPWARP.md §4.8).** For an SDK with the multi-service controller; others
-skip them. `services` replaces `sdkState`, and two keys are added; `mode`, `target`, `limits` and `handler` are
+**Multi-service (`multi_service_*.json`, MCPWARP.md §4.8).** Host guidance (Fixture classification above). `services` replaces `sdkState`, and two keys are added; `mode`, `target`, `limits` and `handler` are
 shared by every service (the runner gives each service its own instance of that handler):
 
 | Key | Meaning |
@@ -319,7 +337,7 @@ shared by every service (the runner gives each service its own instance of that 
 | `services` | the services one connection holds, `[{name, id, url, state, code?}]`: `name`, `id`, `url` as the runner's `registered.services[]` delivers them, `state` a §6A.4 service state (`active`, `pending` = never active yet, `disabled` with `code: "DISABLED"` from the dashboard or without a code locally, `rejected`, `unregistered`) |
 | `username` | the account's username, the part after the last `-` of each service's host label (`^[a-z0-9]{3,20}$`) |
 | `routedTo` | the `name` of the service whose handler MUST be called, or `null` when none is (selection not reached, or no service selected) |
-| `runnerRequirement` | optional, multi-service only: `"trust-server-id-header"` — the runner MUST enable the SDK option `trustServerIdHeader` (default off) for this fixture; a runner or SDK that cannot skips it with a note |
+| `runnerRequirement` | optional, multi-service only: `"trust-server-id-header"` — the runner MUST enable the host's option `trustServerIdHeader` (default off) for this fixture; a runner or host that cannot skips it with a note |
 
 Selection runs after the path check. Only with `trustServerIdHeader` on (a fixture carrying
 `runnerRequirement: "trust-server-id-header"`), `X-Mcpwarp-Server-Id` (name case-insensitive, the first if
@@ -342,15 +360,16 @@ cannot force that order skips it with a note), and the `retry` cause `token-refr
 `describeStatus` rules, `cases.json` holds input → expected examples, and `<locale>.json` maps every legal
 `<state>.<code|none>` pairing to `{label, detail?}`.
 
-Since v0.7.0 `tunnel/ms_NN_*.json` are **group fixtures** for the multi-service controller (MCPWARP.md §6A;
-`tunnel/README.md` "Group fixtures"): `config.services` instead of `config.name`; snapshots are
+Since v0.7.0 `tunnel/ms_NN_*.json` are **group fixtures** for a host's multi-service controller (MCPWARP.md §6A;
+`tunnel/README.md` "Group fixtures"; host guidance since v0.8.0): `config.services` instead of `config.name`; snapshots are
 `ServiceGroupStatus`, the connection-level status plus `services: {<name>: {state, id?, url?, code?, lastError?}}`;
 new events `unregistered {services, conn?}`, `add_service {name, kind?}`, `remove_service {name}`,
 `enable_service {name}`, `disable_service {name}`, and the observation `sent {op, names, conn?}`, which lists every
-`register`/`unregister` the SDK sends (closes aside) at the point it is sent; `registered` carries named
+`register`/`unregister` the controller sends (closes aside) at the point it is sent; `registered` carries named
 `services[]` and `errors[]`, `conflict` a `name`, `enabled` an `id` and/or `name`, `disabled` an `id`. The
 status-text tables gain `service.<state>` (`{label}`, six states) and `lastError.NO_SERVICE_REGISTERED`, and a
-`cases.json` case with `input.service` instead of `input.status` is a `describeServiceStatus` case (§6A.9).
+`cases.json` case with `input.service` instead of `input.status` is a `describeServiceStatus` case (§6A.9); all of
+these are host-only (`rules.json` `hostOnly`, `hostOnlyCases`).
 
 ## Consuming these fixtures from an SDK test harness
 
@@ -475,7 +494,8 @@ earns its keep, as the arbiter that keeps independent SDKs honest with each othe
    local `disabled`: `disable_service`; `taken_over`: a `conflict`; `unregistered`: `remove_service`).
 10. `fixtures/mcpwarp/status-text/` (skipped with a note when absent): `rules.json`, `cases.json` and `en.json`
     exist; `en.json`'s keys are exactly the legal `<state>.<code|none>` pairings plus the seven multi-service
-    keys `service.<state>` and `lastError.NO_SERVICE_REGISTERED` (keys starting `_` or `$` are free); every
+    keys `service.<state>` and `lastError.NO_SERVICE_REGISTERED`, host-only (`rules.json` `hostOnly`) but kept in
+    these tables (keys starting `_` or `$` are free); every
     other locale file has exactly `en.json`'s key set; values are `{label, detail?}` with non-empty strings, no
     ASCII `...`, no trailing `.`/`。`, no surrounding whitespace, and `detail` ≠ `label`; a `service.*` value is
     `{label}` only, and `lastError.NO_SERVICE_REGISTERED` has a `detail` and the locale's `error` label;

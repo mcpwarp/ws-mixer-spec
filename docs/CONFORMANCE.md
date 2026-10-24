@@ -350,7 +350,8 @@ ws-mixer-spec/
 | `ws-mixer-go` | `conformance/adapter/` | built with `-tags conformance` so `wsmixer.AllowSubfloorTiming` (that repo's `conformance_hooks.go`) exists. Also produces `ws-mixer-server`'s adapter via a `ServerBackend` interface it exports (see that repo's own docs) — the public repo tests `go-client`/`go-server` via `wsmixer.AcceptConn`, the private server repo tests the real `Listener`. |
 | `ws-mixer-js` | `conformance/adapter/` | `adapter.mjs` imports the package's own built `dist/index.js`, not `src/*.ts` directly (a plain `node` process has no loader for a bare `.ts` import). |
 | `ws-mixer-server` | `cmd/conformance-adapter/` | wires the real `wsmixerserver.Listener`; this is the only adapter that proves the production HTTP/upgrade layer, not just the wire core. |
-| `ws-mixer-python` | (later) | not built yet |
+| `ws-mixer-rust` | `conformance/adapter/` | the workspace crate `ws-mixer-conformance-adapter` (binary `conformance-adapter`, client role, built against `ws-mixer` with its `conformance` feature); the `run` script the runner spawns does `cargo build --release --locked -p ws-mixer-conformance-adapter` first (build output to stderr) and then execs the binary. |
+| `ws-mixer-python` | `conformance/adapter/` | needs no build: the `run` script the runner spawns starts `python3 -I` on `adapter.py`, which runs the SDK straight from `src/` (zero dependencies, no venv; `WSMIXER_PYTHON` picks the interpreter). |
 
 ### Finding fixtures and adapters from outside this repo
 
