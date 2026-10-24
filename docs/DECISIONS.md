@@ -768,6 +768,7 @@ multi-service controller (`D-2026-10-24-01`), and on 2026-10-23, answering the C
 forwarding stays for every host (`-02`). `-03` records the small rulings given to the SDK and server sessions by
 message after `v0.7.2`; `-04` the implementation status. No change to frames or the envelope, no new status code, no fixture removed.
 Ships as spec `v0.8.0` (minor: a scope change).
+`D-2026-10-24-05`, the note under `-01` and the update of `-04` ship as spec `v0.8.1`.
 
 - **D-2026-10-24-01** — §6A is informative; no SDK ships a multi-service controller. Every SDK has the same
   single-service scope (`expose()`, the tunnel controller); publishing several services on one connection is the
@@ -800,6 +801,7 @@ Ships as spec `v0.8.0` (minor: a scope change).
   §11 (rows 49–51 and 61 as host notes, the SDK paragraph), §12 (host checklist); `spec/README.md` (Fixture
   classification), `tunnel/README.md`, status-text `rules.json` (`hostOnly`, `hostOnlyCases`) and `cases.json`
   description, `check-fixtures.mjs` comments. See [`MCPWARP.md`](./MCPWARP.md#6a-multi-service-hosts-informative).
+  Note (`D-2026-10-24-04`): ws-mixer-go v0.11.0 (`c162fb7`, `spec.pin` `v0.8.0`) shipped the removal.
 - **D-2026-10-24-02** — `/mcp`-only forwarding (§4.3) stays for every host, multi-service hosts included: no
   per-service path option. Decided by the owner on 2026-10-23, answering the CLI session. The CLI's v0.3.0
   documents it as a breaking change: legacy `/sse`, `/messages` and custom paths move to `/mcp`. Reason: the
@@ -826,13 +828,42 @@ Ships as spec `v0.8.0` (minor: a scope change).
   trigger order (§11 row 62), makes `Stream.Reset` reject connection-only codes locally (sentinel
   `wsmixer.ErrResetCode`; WIRE.md §2.8's SHOULD binds both roles, §11 row 63), handles a `GOING_AWAY`/`1000`
   close after a received `drain` as the hand-over even when the close is observed before the drain message, and
-  retires a stream on `Reset`/`CloseWrite` before queuing the frame; ws-mixer-go v0.11.0 removes `ServiceGroup`
-  (`-01`). mcpwarp tunnel 0.6.0 is live in production since 2026-10-24 (mcpwarp-saas `1025905`, chart 0.10.0,
-  infra `c7fb7ac`, 3 pods): operators may turn `trustServerIdHeader` on. Rust `ws-mixer-mcpwarp` 0.1.1 pins
-  `v0.7.2` at ws-mixer-rust `636a3b0`, tag not cut yet; its three fixes for the `v0.7.2` single-service rules
-  are pre-tag, so §11 row 60 stays "fixed in ws-mixer-mcpwarp 0.1.1". ws-mixer-js 0.11.3 (`fbcc862`) is
-  unchanged. mcpwarp/cli v0.2.5 fixed §11 row 51 and v0.2.7 row 50 in part; rows 49 and 50's rest move to the
-  CLI's own layer, v0.3.0. ws-mixer-python pins `v0.7.2`, green, with two behaviour fixes (the `close()` skip
-  condition; an empty `registered` during the pause), unreleased: §11 rows 45 and 48 unchanged. Changed:
-  `MCPWARP.md` §4.8 Trust gate (tunnel 0.6.0 live), §11 (rows 49–50 action, new rows 62–63). See
+  retires a stream on `Reset`/`CloseWrite` before queuing the frame; ws-mixer-go v0.11.0 (`c162fb7`, `spec.pin`
+  `v0.8.0`) removes `ServiceGroup` (`-01`) and queues frames received before a connection becomes current (`-03`
+  (3); ws-mixer-go `D-2026-10-23-01` closed). mcpwarp tunnel 0.6.0 is live in production since 2026-10-24
+  (mcpwarp-saas `1025905`, chart 0.10.0, infra `c7fb7ac`, 3 pods): operators may turn `trustServerIdHeader` on.
+  Rust `ws-mixer-mcpwarp` 0.1.1 (with ws-mixer 0.2.1) pins `v0.8.0` at ws-mixer-rust `1f66fe5`; its three fixes
+  for the `v0.7.2` single-service rules are in 0.1.1, so §11 row 60 stays "fixed in ws-mixer-mcpwarp 0.1.1".
+  ws-mixer-js 0.11.4 (`a98a261`) pins `v0.8.0` and fixes 0.11.3's Handler delivery (§11 row 64). mcpwarp/cli
+  v0.2.5 fixed §11 row 51 and v0.2.7 row 50 in part; rows 49 and 50's rest move to the CLI's own layer, v0.3.0. ws-mixer-python pinned `v0.7.2`, green, with two behaviour fixes (the `close()` skip
+  condition; an empty `registered` during the pause); ws-mixer-python 0.1.0 (`e6f1052`) pins `v0.8.0`,
+  unreleased: §11 rows 45 and 48 name it. ws-mixer-server v0.6.0 (`643b30f`) pins spec `v0.8.0`, ws-mixer-js
+  0.11.4 and ws-mixer-go v0.11.0. Changed: `MCPWARP.md` §4.8 Trust gate (tunnel 0.6.0 live), §11 (rows 49–50
+  action, new rows 62–63); at `v0.8.1`: the introduction (JS 0.11.4), §9.2, §11 (rows 45, 48, 60 and 62, the rows 49–51 paragraph, new row 64
+  and its paragraph). See
   [`MCPWARP.md`](./MCPWARP.md#11-deviations-from-sdk-heads).
+- **D-2026-10-24-05** — Rulings after the `v0.8.0` tag. (1) Frames in flight: while a frame is outstanding (on
+  the wire, unanswered) a whole-frame `error` op with any code other than `OVERLOADED` and `CONNECTION_LIMIT`
+  answers it; once `OVERLOADED` has dropped it and it is re-queued for the pause nothing is on the wire, so an
+  `error` op or an empty `registered` during the pause answers nothing and leaves the `OVERLOADED` counter
+  unchanged (the next `OVERLOADED` is n + 1). Single-service: a `registered` naming the service that arrives
+  during the pause settles the handle, cancels the re-send and resets the `OVERLOADED` counter (the re-queued
+  frame counts as answered); a stray `registered` with nothing outstanding and no pause changes the `OVERLOADED`
+  counter not at all (the transient counter follows §3.2). In the `close()` case an `unregister` may be on the
+  wire behind the dropped `register`; its `unregistered` answers that outstanding frame and resets the counter.
+  (2) Schema verdicts (envelope `register_batch_valid` and `register_two_services`, `register_batch_101_invalid`)
+  are checked by `check-fixtures.mjs` in this repo's CI, not by SDK runners; an SDK runner asserts wire verdicts
+  on decode cases only, as `spec/README.md`'s verdict rule says. (3) Informative: a statically typed SDK whose
+  config fields cannot carry JSON `null` or a wrong type MAY skip the cases of tunnel `07_invalid_config` its
+  config type cannot express, at the finest granularity its types force (per case where possible:
+  `ws-mixer-mcpwarp` skips only the `kind: "ftp"` event and its two snapshots; the whole fixture only when
+  interleaving leaves no choice: ws-mixer-go skips it since v0.9.0), provided the SDK's own tests cover the
+  expressible checks (whichever of the unset token, unset name and invalid `kind` its config type can express);
+  dynamically typed SDKs (JS, Python) run it in full. (4) A connection that closes in the same delivery burst as its `welcome` never becomes current: its held
+  frames are not delivered and its disconnect is reported with `phase` `"connected"`; a connected event emitted
+  before it is allowed. Reason: the ws-mixer-js 0.11.4 review ((1): a `registered` during the pause), the
+  `ws-mixer-mcpwarp` 0.1.1 re-pin questions ((1): the counter is the `OVERLOADED` one; (2); (3): per-case skip;
+  (4)), the ws-mixer-python 0.1.0 re-pin ((1): the `close()` case; (2)) and the ws-mixer-go v0.11.0 runner
+  report ((1): outstanding versus re-queued; (3)). Changed: `MCPWARP.md` §2.6 `OVERLOADED` re-send, §2.7
+  (`registered` row), §3.2 (Transient retry row), §10.1 (Multi-service row), §10.6 (Fixture status, `07_invalid_config` note); `CLIENT-SDK.md` Handler delivery;
+  `spec/README.md` Fixture classification. See [`MCPWARP.md`](./MCPWARP.md#26-errorcode).

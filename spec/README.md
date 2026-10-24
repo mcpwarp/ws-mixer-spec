@@ -252,22 +252,23 @@ it in its own CI. Where this section and MCPWARP.md disagree, MCPWARP.md wins.
 
 **Fixture classification (since v0.8.0, D-2026-10-24-01).** No SDK ships a multi-service controller; MCPWARP.md
 §6A is informative guidance for hosts (CLI, desktop) that multiplex several services on one connection. The
-mcpwarp fixtures therefore fall into two classes:
+mcpwarp fixtures therefore fall into two classes, plus checker-only schema verdicts:
 
 - **Host guidance** (SDK runners skip them by default; a host may run them through its own adapter): tunnel
   `ms_01`..`ms_14`; bridging `multi_service_route_by_header`, `multi_service_route_by_host`,
   `multi_service_unknown_service_503`, `multi_service_unknown_service_non_mcp_404`; the encode side of envelope
-  `register_batch_valid` and `register_two_services` (their schema verdict still runs); the
+  `register_batch_valid` and `register_two_services` (their schema verdict is checked by `check-fixtures.mjs`, not by SDK runners); the
   status-text `cases.json` cases with `input.service` and the two group cases using
   `lastError.NO_SERVICE_REGISTERED` (`rules.json` `hostOnlyCases`); the status-text keys `service.*` and
   `lastError.NO_SERVICE_REGISTERED` (`rules.json` `hostOnly`, optional in an SDK's tables).
 - **SDK conformance** (unchanged): every envelope decode case, including multi-entry `registered` /
   `unregistered` and the per-name `conflict_per_name` (an SDK ignores entries for other names, MCPWARP.md §2.3);
-  `register_batch_101_invalid` (schema); every other bridging fixture; tunnel `01`..`45`; the status-text
+  every other bridging fixture; tunnel `01`..`45`; the status-text
   `<state>.<CODE>` keys and the other `cases.json` cases.
 
 Every fixture stays in the corpus and `check-fixtures.mjs` validates all of them; the classification only says
-who runs them.
+who runs them. The schema verdict of `register_batch_101_invalid`, like those above, is checked by
+`check-fixtures.mjs` in this repo's CI, not by SDK runners (MCPWARP.md §10.6 Fixture status).
 
 ### `mcpwarp.schema.json` and `envelope/`
 
