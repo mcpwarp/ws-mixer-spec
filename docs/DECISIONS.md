@@ -807,6 +807,7 @@ Ships as spec `v0.8.0` (minor: a scope change).
   documents it as a breaking change: legacy `/sse`, `/messages` and custom paths move to `/mcp`. Reason: the
   owner's — the same model as the Anki tunnel's single `/mcp` endpoint. Changed: `MCPWARP.md` §6A intro and §12
   host checklist (pointers only; §4.3 already says it). See [`MCPWARP.md`](./MCPWARP.md#43-path-rule).
+  Implemented by mcpwarp/cli v0.3.0 (`3a6ae8c`); details in `D-2026-10-25-01`.
 - **D-2026-10-24-03** — Small rulings. (1) During an `OVERLOADED` pause an empty `registered` or an `error` op
   answers nothing and leaves the `OVERLOADED` counter unchanged (the next `OVERLOADED` is n + 1); "resets on any
   non-`OVERLOADED` reply" means a reply that answers the outstanding frame (ruled 2026-10-23 for ws-mixer-python).
@@ -842,6 +843,8 @@ Ships as spec `v0.8.0` (minor: a scope change).
   action, new rows 62–63); at `v0.8.1`: the introduction (JS 0.11.4), §9.2, §11 (rows 45, 48, 60 and 62, the rows 49–51 paragraph, new row 64
   and its paragraph). See
   [`MCPWARP.md`](./MCPWARP.md#11-deviations-from-sdk-heads).
+  At `v0.8.2` (`D-2026-10-25-01`): mcpwarp/cli v0.3.0 closes rows 49 and 50; ws-mixer-go v0.11.1,
+  ws-mixer-python `27e0c2c` and ws-mixer-rust main `ec98673` pin `v0.8.1`.
 - **D-2026-10-24-05** — Rulings after the `v0.8.0` tag. (1) Frames in flight: while a frame is outstanding (on
   the wire, unanswered) a whole-frame `error` op with any code other than `OVERLOADED` and `CONNECTION_LIMIT`
   answers it; once `OVERLOADED` has dropped it and it is re-queued for the pause nothing is on the wire, so an
@@ -867,3 +870,43 @@ Ships as spec `v0.8.0` (minor: a scope change).
   report ((1): outstanding versus re-queued; (3)). Changed: `MCPWARP.md` §2.6 `OVERLOADED` re-send, §2.7
   (`registered` row), §3.2 (Transient retry row), §10.1 (Multi-service row), §10.6 (Fixture status, `07_invalid_config` note); `CLIENT-SDK.md` Handler delivery;
   `spec/README.md` Fixture classification. See [`MCPWARP.md`](./MCPWARP.md#26-errorcode).
+
+## 2026-10-25
+
+Status after the `v0.8.1` tag and one `WIRE.md` correction, all from peer-session reports of 2026-10-24. No
+rule change. Ships as spec `v0.8.2` (docs only).
+
+- **D-2026-10-25-01** — Implementation status and the `WIRE.md` §2.9 timeline. mcpwarp/cli v0.3.0 (`3a6ae8c`,
+  2026-10-24, on ws-mixer-go v0.11.1, `spec.pin` `v0.8.1`) closes §11 rows 49 and 50 in the CLI's own layer.
+  Row 49: one `register`/`unregister` frame in flight per connection with fold-in (later intent per name wins,
+  ≤ 100 names), the dropped frame re-sent after min(1000 × 2^(n−1), 30000) ms with a per-frame counter reset on
+  settle, and the §2.6 settle rules as of `v0.8.1`. Row 50: transient codes (the §2.5 set, plus a name the
+  reply omits, treated as `INTERNAL`) keep the row `pending` and are re-sent per name with the §3.2 counter
+  carried across reconnects, any whole-frame `error` except `OVERLOADED`, `CONNECTION_LIMIT` and
+  `UNSUPPORTED_VERSION` rejects exactly that frame's names (G7), and the run is fatal only when nothing was ever
+  registered, nothing is outstanding, queued or retrying, and every configured service not taken over or
+  locally disabled ended in a non-transient error other than `SERVER_DISABLED`. v0.3.0 also updates row 61
+  (`taken_over` shown as its own state; code `DISABLED` for both the `disable` op and `SERVER_DISABLED`) and
+  adds two informative host rows: a `pending` row may carry the first transient code it received (§6A.4 gives
+  `pending` no code), and the shutdown `unregister` is sent whenever a connection is up, also where §3.2 would
+  skip it (harmless: names not held are silently absent, §2.3). It implements `D-2026-10-24-02`: the relay
+  forwards exactly `/mcp` (query allowed); any other origin-form path gets `404` `{"error":"not_found"}`
+  before any service lookup; `*` and authority-form targets get `400`; an unknown `Host` on `/mcp` gets `503`
+  `{"error":"service unavailable"}`; a refusal from the path check drains the body before CLOSE; its release
+  notes mark the narrowing breaking. ws-mixer-go v0.11.1 (`6021ffa`, 2026-10-24) pins `v0.8.1`: docs only,
+  fixtures and `COUNTS.json` unchanged (ws-mixer-go `D-2026-10-24-02`). ws-mixer-rust: ws-mixer 0.2.1 and
+  ws-mixer-mcpwarp 0.1.1 were published to crates.io on 2026-10-24 from `1f66fe5` (tags `ws-mixer-v0.2.1`,
+  `ws-mixer-mcpwarp-v0.1.1`, `spec.pin` `v0.8.0`); main `ec98673` pins `v0.8.1`, unreleased; the `v0.8.1` pin
+  ships as ws-mixer 0.2.2 / ws-mixer-mcpwarp 0.1.2 with the next code change. ws-mixer-python main `27e0c2c`
+  pins `v0.8.1`; the repository is public at https://github.com/mcpwarp/ws-mixer-python; no tag and no PyPI release.
+  `WIRE.md` §2.9: the Kubernetes rollout timeline is now labelled an informative recommended shape for a server
+  operator, with an informative note on the deployed mcpwarp edge (tunnel main): no preStop hook in its chart and no
+  upgrade gate during a drain (upgrades are accepted until `http.Server.Shutdown` closes the listeners after
+  `Drain` returns; a late upgrade then fails at TCP/HTTP and never receives `drain{deadline_ms:0}`); its drain
+  sources are exactly SIGTERM and the per-pod control call; `terminationGracePeriodSeconds` 30 with
+  `TUNNEL_SHUTDOWN_TIMEOUT_SECONDS` 15, so the SIGTERM drain's `deadline_ms` is min(25 s, half the shutdown
+  timeout) ≈ 7500, and `deadline_ms` 25000 appears only on the control-call path (facts from mcpwarp-saas via
+  ws-mixer-server, 2026-10-24). No client rule changed: a client follows whatever `drain` or close it receives.
+  Reason: peer reports after `v0.8.1`. Changed: `WIRE.md` §2.9 (rollout shape); `REPOS.md` (ws-mixer-python
+  row); `MCPWARP.md` §11 (rows 45, 48, 49, 50 and 61, new rows 65–66, the host-notes, rows 54–61 and pins
+  paragraphs). See [`MCPWARP.md`](./MCPWARP.md#11-deviations-from-sdk-heads).

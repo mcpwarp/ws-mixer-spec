@@ -9,7 +9,7 @@
 | `ws-mixer-js` | public | Apache-2.0 | npm `@mcpwarp/ws-mixer` + its conformance adapter |
 | `ws-mixer-rust` | public | Apache-2.0 | crate `ws-mixer` (Rust client) + its conformance adapter, and the sibling crate `ws-mixer-mcpwarp` (the mcpwarp layer, [`MCPWARP.md`](./MCPWARP.md)) |
 | `ws-mixer-server` | private (AGPL-3.0 if opened) | AGPL-3.0 | Go module `github.com/mcpwarp/ws-mixer-server` — HTTP/upgrade layer, auth policy, server ops |
-| `ws-mixer-python` | — | Apache-2.0 | Python package `ws-mixer` — asyncio client + its conformance adapter + the mcpwarp layer ([`MCPWARP.md`](./MCPWARP.md)); unreleased |
+| [`ws-mixer-python`](https://github.com/mcpwarp/ws-mixer-python) | public | Apache-2.0 | Python package `ws-mixer` — asyncio client + its conformance adapter + the mcpwarp layer ([`MCPWARP.md`](./MCPWARP.md)); unreleased |
 
 This repo owns nothing implementation-specific: no server, no client, no adapters. It owns the contract
 every implementation is validated against.

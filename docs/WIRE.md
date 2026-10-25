@@ -562,7 +562,7 @@ promised not to open any past that boundary.
 | Client-sent drain | `drain{reason:"client_requested"}` carries `last_stream_id` = the client's `highest_opened` (§2.5: the highest `OPEN` id it has received, `0` if none) and `deadline_ms` = the grace the client will actually wait, `5000` (§2.10 item 14). The server SHOULD stop sending `OPEN` once it receives it. An `OPEN` that arrives after the client sent its drain MUST be answered with `RESET(REFUSED_STREAM)` on that stream, never a connection error: it can cross the drain on the wire, and its id is above the `last_stream_id` already sent, so it is retry-safe. |
 | Locally closed connection | Once the SDK has closed a connection locally it MUST ignore every inbound frame on it: no `welcome` handling, no timers, no events. A dial scheduled before the SDK's close MUST NOT reach the socket factory after that close. |
 
-Kubernetes rollout shape, since it drives the numbers:
+Informative: one Kubernetes rollout shape that fits the numbers above, for a server operator:
 
 ```
 t=0     preStop hook `sleep 5` runs FIRST (preStop blocks SIGTERM, and its time counts
@@ -576,8 +576,17 @@ t=30s   RESET(CANCEL) survivors, error{GOING_AWAY}, WS close 4012
 t=45s   terminationGracePeriodSeconds — SIGKILL
 ```
 
-`terminationGracePeriodSeconds: 45` = preStop 5 + drain 25 + slack 15. The k8s default of 30 is **not**
-enough and must be set explicitly.
+`terminationGracePeriodSeconds: 45` = preStop 5 + drain 25 + slack 15. For this shape the k8s default of 30
+is **not** enough; set 45 explicitly.
+
+Informative: the deployed mcpwarp tunnel does not follow this shape. Its chart has no preStop
+hook, and it does not gate upgrades during a drain: upgrades are accepted normally until
+`http.Server.Shutdown` closes the listeners after `Drain` returns, and a later upgrade fails at TCP/HTTP; it
+never receives `drain{deadline_ms:0}`. Its drain sources are exactly two, SIGTERM and the per-pod control
+call. It runs with `terminationGracePeriodSeconds` 30 and `TUNNEL_SHUTDOWN_TIMEOUT_SECONDS` 15, so the
+SIGTERM drain's `deadline_ms` is min(25 s, half the shutdown timeout) ≈ 7500; `deadline_ms` 25000 appears
+only on the control-call path. No client rule depends on any of this: a client follows whatever `drain` or
+close it receives.
 
 **Reconnect** (client SDK, not the protocol)
 
