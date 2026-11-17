@@ -287,6 +287,9 @@ same for the ws-mixer-rust session implementing `v0.6.1`; approved by Anatoly.
   `GET` without an SSE `Accept`, and `202` for notifications on the SDK because they are visible on `/mcp`; an
   SDK that did them would fight the MCP server library that already does, and would tie the transport to one
   MCP revision. ws-mixer-js already behaves this way. Changed: `MCPWARP.md` §4.7. See [`MCPWARP.md`](./MCPWARP.md#47-mcp-semantics-belong-to-the-handler).
+  Note (`D-2026-11-17-01`): session ids belong to MCP 2025-03-26 through 2025-11-25; MCP 2026-07-28 removes
+  sessions and the `GET` stream, keeps `202` for an accepted notification and `405` for `GET`/`DELETE`; the
+  rule is unchanged and already covers the request headers it requires.
 - **D-2026-10-14-03** — Precedence on `/mcp` is `404` (path) > `503` (disabled/closing) > `413` (body cap) >
   handler, in every adapter, and the `413` reason phrase is `Content Too Large` (RFC 9110). Reason: never read
   a body that will be refused anyway — a disabled service should not buffer up to 4 MiB to then answer `503`.
@@ -845,6 +848,7 @@ Ships as spec `v0.8.0` (minor: a scope change).
   [`MCPWARP.md`](./MCPWARP.md#11-deviations-from-sdk-heads).
   At `v0.8.2` (`D-2026-10-25-01`): mcpwarp/cli v0.3.0 closes rows 49 and 50; ws-mixer-go v0.11.1,
   ws-mixer-python `27e0c2c` and ws-mixer-rust main `ec98673` pin `v0.8.1`.
+  At `v0.8.3` (`D-2026-11-17-01`): ws-mixer-go v0.11.2 and ws-mixer-python `67052ef` pin `v0.8.2`.
 - **D-2026-10-24-05** — Rulings after the `v0.8.0` tag. (1) Frames in flight: while a frame is outstanding (on
   the wire, unanswered) a whole-frame `error` op with any code other than `OVERLOADED` and `CONNECTION_LIMIT`
   answers it; once `OVERLOADED` has dropped it and it is re-queued for the pause nothing is on the wire, so an
@@ -910,3 +914,38 @@ rule change. Ships as spec `v0.8.2` (docs only).
   Reason: peer reports after `v0.8.1`. Changed: `WIRE.md` §2.9 (rollout shape); `REPOS.md` (ws-mixer-python
   row); `MCPWARP.md` §11 (rows 45, 48, 49, 50 and 61, new rows 65–66, the host-notes, rows 54–61 and pins
   paragraphs). See [`MCPWARP.md`](./MCPWARP.md#11-deviations-from-sdk-heads).
+  Note (`D-2026-11-17-01`): superseded in part: since mcpwarp tunnel 0.7.0 the edge gates late upgrades during
+  a drain; a late upgrade receives `drain{deadline_ms:0}`.
+
+## 2026-11-17
+
+Status after the `v0.8.2` tag, from peer-session reports of 2026-10-25 to 2026-11-16, and two informative
+example fixes. No rule change. Ships as spec `v0.8.3` (docs only).
+
+- **D-2026-11-17-01** — Implementation status, the deployed tunnel's drain, and examples. (1) `WIRE.md` §2.9:
+  mcpwarp tunnel 0.7.0 (mcpwarp-saas `0ba2c8f`; ws-mixer-go v0.11.0, ws-mixer-server v0.6.0, `spec.pin`
+  `v0.8.0`; live in production since 2026-10-26, infra `c2e0a29`, then 3 pods) gates late upgrades: a
+  connection that completes `hello`/`welcome` after `Manager.Drain` started gets its `welcome`, then
+  `drain{reason:"rollout", deadline_ms:0}`, then `error{GOING_AWAY}` and close `4012`, and is never tracked
+  (registers nothing, takes nothing over). Production runs tunnel 0.7.1 (dependency bumps only, gate
+  unchanged) on 1 pod since 2026-11-12 (infra `ebeccbb`, `27076f4`). The `v0.8.2` clause "never receives `drain{deadline_ms:0}`" is
+  dropped; the rest of the note stands (no preStop hook; SIGTERM and the per-pod control call; grace 30 s,
+  shutdown timeout 15 s; SIGTERM `deadline_ms` ≈ 7500; 25000 only on the control-call path). Caveat: the
+  gate is unit-tested; no late upgrade has been observed in production. (2) Pins: ws-mixer-go v0.11.2 (`125fb68`, 2026-10-25) pins `v0.8.2`: docs only, fixtures and
+  `COUNTS.json` unchanged, plus a test-race fix; §11 row 62 and §9.2 keep "removed in ws-mixer-go v0.11.0
+  (`c162fb7`)". ws-mixer-python main `67052ef` (2026-11-07) pins `v0.8.2`; 0.1.0 is still unreleased (no tag,
+  no PyPI); its Python-only additions `Tunnel.abort()` and `target_ssl_context` are additions §1 allows, no §11
+  row. ws-mixer-rust unchanged (main `ec98673` pins `v0.8.1`, unreleased; crates at `1f66fe5` pin `v0.8.0`).
+  ws-mixer-js 0.11.4 (`a98a261`) and ws-mixer-server v0.6.0 (`643b30f`) still pin `v0.8.0`. mcpwarp/cli and
+  mcpwarp desktop carry no `spec.pin`. (3) `WIRE.md` §2.1's example upgrade request names
+  `connect.mcpwarp.io`, the host of `MCPWARP.md`'s `DEFAULT_URL`; the path stays `/v1/tunnel` (the server's
+  choice; the mcpwarp edge routes by `Host` and ignores it). (4) MCP 2026-07-28
+  (reviewed 2026-11-16): `MCPWARP.md` §4.1's example request used `mcp-session-id` and `ping`, both removed;
+  it is now a 2026-07-28 `tools/list` with `MCP-Protocol-Version`, `Mcp-Method` and `_meta`. §4.7 says
+  session ids belong to MCP 2025-03-26 through 2025-11-25; MCP 2026-07-28 removes sessions and the `GET`
+  stream, still answers an accepted notification with `202` and `GET`/`DELETE` with `405`; its required
+  request headers (`MCP-Protocol-Version`, since 2025-06-18; `Mcp-Method`, `Mcp-Name`, `Mcp-Param-*`) are
+  already covered by §4.7's MUSTs. The mcpwarp layer stays MCP-agnostic; the bridging fixtures keep their 2025-era
+  request bytes, which the agent forwards unchanged either way. Reason: peer reports after `v0.8.2`; the MCP
+  revision. Changed: `WIRE.md` §2.1 (example), §2.9 (deployed tunnel note); `MCPWARP.md` §4.1 (example), §4.7,
+  §11 (rows 45 and 48, pins paragraph). See [`MCPWARP.md`](./MCPWARP.md#11-deviations-from-sdk-heads).

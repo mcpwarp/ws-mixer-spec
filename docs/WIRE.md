@@ -28,7 +28,7 @@ This section is self-contained. An implementer should not need to open a researc
 
 ```http
 GET /v1/tunnel HTTP/1.1
-Host: edge.mcpwarp.io
+Host: connect.mcpwarp.io
 Upgrade: websocket
 Connection: Upgrade
 Sec-WebSocket-Version: 13
@@ -580,9 +580,10 @@ t=45s   terminationGracePeriodSeconds — SIGKILL
 is **not** enough; set 45 explicitly.
 
 Informative: the deployed mcpwarp tunnel does not follow this shape. Its chart has no preStop
-hook, and it does not gate upgrades during a drain: upgrades are accepted normally until
-`http.Server.Shutdown` closes the listeners after `Drain` returns, and a later upgrade fails at TCP/HTTP; it
-never receives `drain{deadline_ms:0}`. Its drain sources are exactly two, SIGTERM and the per-pod control
+hook. Since tunnel 0.7.0 (live 2026-10-26) a connection that completes `hello`/`welcome` after the drain
+started gets its `welcome`, then `drain{reason:"rollout", deadline_ms:0}`, then `error{GOING_AWAY}` and close
+`4012`, and is never tracked; once `http.Server.Shutdown` closes the listeners after `Drain` returns, a
+later upgrade fails at TCP/HTTP. Its drain sources are exactly two, SIGTERM and the per-pod control
 call. It runs with `terminationGracePeriodSeconds` 30 and `TUNNEL_SHUTDOWN_TIMEOUT_SECONDS` 15, so the
 SIGTERM drain's `deadline_ms` is min(25 s, half the shutdown timeout) ≈ 7500; `deadline_ms` 25000 appears
 only on the control-call path. No client rule depends on any of this: a client follows whatever `drain` or

@@ -377,11 +377,12 @@ POST /mcp HTTP/1.1
 Host: notes-tester.mcpwarp.test
 accept: application/json, text/event-stream
 content-type: application/json
-mcp-session-id: abc
+mcp-method: tools/list
+mcp-protocol-version: 2026-07-28
 user-agent: Go-http-client/1.1
-Content-Length: 40
+Content-Length: 250
 
-{"jsonrpc":"2.0","id":1,"method":"ping"}
+{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"ExampleClient","version":"1.0.0"}}}}
 ```
 
 Agent → edge, then `CLOSE` (handler returned a body with no length):
@@ -548,6 +549,10 @@ MUST NOT inject, strip or generate `Mcp-Session-Id`, and MUST NOT special-case `
 notifications. Session-id generation, `405` + `Allow: POST` for a `GET` without an SSE `Accept`, and `202`
 for a notification are the MCP Streamable HTTP transport's job — the application's handler. An earlier task
 list attributed them to the SDK because they are visible on `/mcp`; they are not the SDK's to generate.
+Informative: session ids belong to the MCP transports 2025-03-26 through 2025-11-25. MCP 2026-07-28 removes
+sessions and the `GET` stream, still answers an accepted notification with `202`, and answers `GET` and
+`DELETE` with `405`. The MUSTs above already cover the request headers it requires (`MCP-Protocol-Version`,
+since 2025-06-18; `Mcp-Method`, `Mcp-Name`, `Mcp-Param-*`).
 
 ### 4.8 Multi-service routing
 
@@ -1672,10 +1677,10 @@ and `ws-mixer-mcpwarp` 0.1.x, and the ws-mixer-python proposal (unreleased).
 | 42 | Rust | `disable` with an unknown id (§2.7) | adopted when no id is known; a foreign id dropped | held until a `registered` brings it | fixed in ws-mixer-mcpwarp 0.1.1 |
 | 43 | Rust | Forwarded target `[` `]` (§4.3) | escaped | passed through unescaped | fixed |
 | 44 | Rust | Token provider on the tunnel (§6.2) | `TunnelConfig.token` string only | string or provider | fixed in ws-mixer-mcpwarp 0.1.1 |
-| 45 | Python | `drain.retry_after_ms` (WIRE.md §2.9) | ignored (proposal) | wait ≥ `retry_after_ms`, + ≤ 2000 ms jitter | implemented in ws-mixer-python 0.1.0 (27e0c2c, pins v0.8.1; unreleased) |
+| 45 | Python | `drain.retry_after_ms` (WIRE.md §2.9) | ignored (proposal) | wait ≥ `retry_after_ms`, + ≤ 2000 ms jitter | implemented in ws-mixer-python 0.1.0 (67052ef, pins v0.8.2; unreleased) |
 | 46 | Go | `disable` with an unknown id (§2.7) | adopted when no id is known (`mcpwarp/session.go:322`) | held until a `registered` brings it (`tunnel/42_disable_unknown_id_held`) | fixed in ws-mixer-go v0.9.1 |
 | 47 | JS | Unrepresentable methods in `./node` `server` mode (§4.5) | `CONNECT`, `TRACE`, `TRACK` not refused | `400` `request cannot be represented as a web Request` (`bridging/handler_connect_400`) | fixed in 0.11.2 |
-| 48 | Python | Unrepresentable requests (§4.5) | `CONNECT`, `TRACE`, `TRACK` and NUL header values not refused, handler and target mode | `400` `request cannot be represented as a web Request` | implemented in ws-mixer-python 0.1.0 (27e0c2c, pins v0.8.1; unreleased) |
+| 48 | Python | Unrepresentable requests (§4.5) | `CONNECT`, `TRACE`, `TRACK` and NUL header values not refused, handler and target mode | `400` `request cannot be represented as a web Request` | implemented in ws-mixer-python 0.1.0 (67052ef, pins v0.8.2; unreleased) |
 | 49 | Go CLI (host) | `OVERLOADED` and frames in flight (§2.6, §6A.7) | v0.2.x: one FIFO send queue, but replies are never awaited (`unregistered` only debug-logged); after `OVERLOADED` sends pause 1 s, at most 64 queued, oldest dropped; the dropped `register`/`unregister` is logged and **never re-sent** (`internal/appproto/overload.go`, `internal/tunnel/tunnel.go:283-285`) | at most one `register`/`unregister` outstanding per connection; the outstanding frame re-sent after 1 s, 2 s … 30 s until answered | fixed in CLI v0.3.0 (3a6ae8c, 2026-10-24): one `register`/`unregister` frame in flight per connection with fold-in (later intent per name wins, ≤ 100 names); the dropped frame re-sent after min(1000 × 2^(n−1), 30000) ms with a per-frame counter reset on settle; the §2.6 settle rules as of v0.8.1 |
 | 50 | Go CLI (host) | First-reply fatal rule (§6A.6 G5) and refused names | v0.2.4: exits 1 when the first reply has no successes and any error other than `SERVER_DISABLED` — also when `SERVER_DISABLED` entries are mixed with refusals, and when the errors are transient (`INTERNAL` …); a failed name is never retried on its own (`tunnel.go:320-328`). v0.2.7 (2026-10-19) adopts the `SERVER_DISABLED` clause: zero successes are fatal only when no error is `SERVER_DISABLED` (`ms_11` passes). Remaining: transient codes (`INTERNAL` …) still count as refusals (no per-name retry), and the fatal check runs per reply rather than on the overall service state | fatal (`error`/`INTERNAL`, `No service could be registered.`) only when nothing was ever registered and every service is refused: any `SERVER_DISABLED` entry keeps the connection (the dashboard's `enable` arrives on it); transient entries are re-sent per name with backoff (§3.2 Transient per name) | partly fixed in v0.2.7; fixed in CLI v0.3.0 (3a6ae8c): transient codes (the §2.5 set, plus a name the reply omits, treated as `INTERNAL`) keep the row `pending` and are re-sent per name with the §3.2 counter, carried across reconnects; any whole-frame `error` except `OVERLOADED`, `CONNECTION_LIMIT` and `UNSUPPORTED_VERSION` rejects exactly that frame's names (G7); fatal only when nothing was ever registered, nothing is outstanding, queued or retrying, and every configured service not taken over or locally disabled ended in a non-transient error other than `SERVER_DISABLED` |
 | 51 | Go CLI (host) | Batch size (§2.1 Batch, §6A.7) | every configured server in one `register` per `welcome`, no cap; a whole-frame `error{TOO_MANY_SERVICES}` goes through the generic branch and leaves the rows `pending`. Since v0.2.5 a whole-frame `TOO_MANY_SERVICES` marks the sent batch `rejected` with a hint, and the config refuses more than 100 servers at startup | at most 100 names per frame, consecutive frames one in flight; a whole-frame refusal marks the frame's names `rejected` (G7) | fixed in CLI v0.2.5 (2026-10-15) |
@@ -1716,8 +1721,8 @@ updated for v0.3.0.
 
 Rows 62–63 (v0.8.0, [`D-2026-10-24-04`](./DECISIONS.md#2026-10-24)) are against ws-mixer-go v0.10.0. Row 64
 (v0.8.1, [`D-2026-10-24-04`](./DECISIONS.md#2026-10-24)) is against ws-mixer-js 0.11.3; 0.11.4 (a98a261), which
-fixes it, pins v0.8.0. Pins of the other SDKs: ws-mixer-go v0.11.1 (6021ffa) pins v0.8.1 (docs only, no code
-change); ws-mixer-python 0.1.0 (27e0c2c, pins v0.8.1; unreleased); ws-mixer-rust main ec98673 pins v0.8.1
+fixes it, pins v0.8.0. Pins of the other SDKs: ws-mixer-go v0.11.2 (125fb68) pins v0.8.2 (docs only, plus a
+test-only race fix); ws-mixer-python 0.1.0 (67052ef, pins v0.8.2; unreleased); ws-mixer-rust main ec98673 pins v0.8.1
 (unreleased; the published crates ws-mixer-mcpwarp 0.1.1 / ws-mixer 0.2.1 at 1f66fe5 pin v0.8.0).
 
 Not deviations (spec = HEAD, where earlier docs were wrong or silent): MCP pass-through (§4.7), inbound
